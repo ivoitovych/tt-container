@@ -1,0 +1,150 @@
+# Dockerfile for TT-Metal and TT-Train - Fully Self-Contained Build
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Enable DPRINT for Tenstorrent debugging
+ENV TT_METAL_DPRINT_CORES=0
+ENV ENABLE_DPRINT=1
+
+# Update and upgrade system packages
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y \
+    python3 python3-pip python3-venv \
+    git git-lfs \
+    cargo \
+    wget \
+    libstdc++-12-dev \
+    libmpfr-dev \
+    ccache \
+    build-essential \
+    cmake \
+    ninja-build \
+    clang-17 \
+    libyaml-cpp-dev \
+    libboost-all-dev \
+    libgtest-dev \
+    libhwloc-dev \
+    libssl-dev \
+    pkg-config \
+    software-properties-common \
+    curl \
+    sudo \
+    vim \
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Clang 17 properly
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh 17 && \
+    rm llvm.sh && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-17 100 && \
+    update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-17 100
+
+# Set up git to use SSH
+RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
+
+# Create working directory
+WORKDIR /workspace
+
+# Install Python packages globally
+RUN pip3 install --upgrade pip && \
+    pip3 install numpy wheel setuptools
+
+# Setup SSH for GitHub (will use mounted keys at runtime for private repos)
+RUN mkdir -p /root/.ssh && \
+    ssh-keyscan github.com >> /root/.ssh/known_hosts
+
+# Build and install GDB for debugging
+RUN wget https://ftp.gnu.org/gnu/gdb/gdb-15.1.tar.gz && \
+    tar -xzf gdb-15.1.tar.gz && \
+    cd gdb-15.1 && \
+    ./configure --with-python && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf gdb-15.1 gdb-15.1.tar.gz
+
+# Clone and setup tt-smi (monitoring tool)
+RUN --mount=type=ssh git clone git@github.com:tenstorrent/tt-smi.git && \
+    cd tt-smi && \
+    python3 -m venv .venv && \
+    . .venv/bin/activate && \
+    pip3 install --upgrade pip && \
+    pip install . && \
+    deactivate
+
+# Clone tt-metal repository with all submodules
+RUN --mount=type=ssh \
+    git clone git@github.com:tenstorrent/tt-metal.git && \
+    cd tt-metal && \
+    git submodule update --init --recursive && \
+    git submodule foreach 'git lfs fetch --all && git lfs pull'
+
+# Setup tt-metal build environment
+WORKDIR /workspace/tt-metal
+
+# Install additional dependencies that tt-metal's install_dependencies.sh would install
+RUN apt-get update && \
+    apt-get install -y \
+    libnuma-dev \
+    libgmp-dev \
+    libmpfr-dev \
+    libmpc-dev \
+    libisl-dev \
+    libzip-dev \
+    libtinfo5 \
+    libxml2-dev \
+    libzmq3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build tt-metal in debug mode with all components
+# Note: We're building without running install_dependencies.sh since we've installed everything above
+RUN export ARCH_NAME=wormhole_b0 && \
+    export TT_METAL_HOME=/workspace/tt-metal && \
+    export PYTHONPATH=$TT_METAL_HOME:$PYTHONPATH && \
+    ./build_metal.sh --debug --build-all --enable-ccache
+
+# Setup Python virtual environment for tt-metal
+RUN python3 -m venv /workspace/tt-metal-venv && \
+    . /workspace/tt-metal-venv/bin/activate && \
+    pip install --upgrade pip && \
+    pip install -e . && \
+    if [ -f requirements.txt ]; then pip install -r requirements.txt; fi && \
+    if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi && \
+    deactivate
+
+# Clone and setup tt-train
+RUN --mount=type=ssh \
+    git clone git@github.com:tenstorrent/tt-train.git /workspace/tt-train || echo "tt-train repository not accessible or doesn't exist"
+
+# Setup tt-train if it exists
+RUN if [ -d "/workspace/tt-train" ]; then \
+    cd /workspace/tt-train && \
+    . /workspace/tt-metal-venv/bin/activate && \
+    pip install -e . && \
+    if [ -f requirements.txt ]; then pip install -r requirements.txt; fi && \
+    deactivate; \
+    fi
+
+# Create alias for tt-metal python venv
+RUN echo 'alias tt-venv="source /workspace/tt-metal-venv/bin/activate"' >> /root/.bashrc && \
+    echo 'echo "TT-Metal Development Environment"' >> /root/.bashrc && \
+    echo 'echo "Run tt-venv to activate the Python environment"' >> /root/.bashrc && \
+    echo 'echo ""' >> /root/.bashrc
+
+# Set environment variables for runtime
+ENV PYTHONPATH=/workspace/tt-metal:$PYTHONPATH
+ENV TT_METAL_HOME=/workspace/tt-metal
+ENV ARCH_NAME=wormhole_b0
+
+# Default working directory
+WORKDIR /workspace/tt-metal
+
+# Default command
+CMD ["/bin/bash"]
+
