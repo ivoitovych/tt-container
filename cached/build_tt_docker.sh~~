@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# Parse command line arguments
+BUILD_TTMETAL=false
+SHARED_CCACHE=false
+BUILD_TYPE="Debug"
+IMAGE_TAG_SUFFIX=""
+CCACHE_HOST_DIR="${HOME}/.cache/ccache"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --build-ttmetal)
+            BUILD_TTMETAL=true
+            shift
+            ;;
+        --shared-ccache)
+            SHARED_CCACHE=true
+            shift
+            ;;
+        --build-type)
+            BUILD_TYPE="$2"
+            shift 2
+            ;;
+        --tag-suffix)
+            IMAGE_TAG_SUFFIX="$2"
+            shift 2
+            ;;
+        --ccache-dir)
+            CCACHE_HOST_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --build-ttmetal     Build tt-metal during image creation"
+            echo "  --shared-ccache     Enable shared ccache support (uses host cache)"
+            echo "  --build-type TYPE   Build type (Debug/Release) [default: Debug]"
+            echo "  --tag-suffix SUFFIX Custom suffix for image tag"
+            echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache]"
+            echo "  -h, --help          Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Generate image tag based on options
+IMAGE_TAG="tt-metal-env"
+if [ "$BUILD_TTMETAL" = "true" ]; then
+    IMAGE_TAG="${IMAGE_TAG}-built-${BUILD_TYPE,,}"
+fi
+if [ "$SHARED_CCACHE" = "true" ]; then
+    IMAGE_TAG="${IMAGE_TAG}-ccache"
+fi
+if [ -n "$IMAGE_TAG_SUFFIX" ]; then
+    IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"
+fi
+
+echo "Building Docker image: $IMAGE_TAG"
+echo "Configuration:"
+echo "  BUILD_TTMETAL: $BUILD_TTMETAL"
+echo "  SHARED_CCACHE: $SHARED_CCACHE"
+echo "  BUILD_TYPE: $BUILD_TYPE"
+
+# Check and prepare ccache directory if shared ccache is enabled
+if [ "$SHARED_CCACHE" = "true" ] || [ "$BUILD_TTMETAL" = "true" ]; then
+    echo "  CCACHE_DIR: $CCACHE_HOST_DIR"
+    
+    # Create ccache directory if it doesn't exist
+    if [ ! -d "$CCACHE_HOST_DIR" ]; then
+        echo "Creating ccache directory: $CCACHE_HOST_DIR"
+        mkdir -p "$CCACHE_HOST_DIR"
+    fi
+    
+    # Show current ccache size
+    if [ -d "$CCACHE_HOST_DIR" ]; then
+        CCACHE_SIZE=$(du -sh "$CCACHE_HOST_DIR" 2>/dev/null | cut -f1)
+        echo "  Current ccache size: ${CCACHE_SIZE:-empty}"
+    fi
+fi
+
+# Create a temporary directory for the build context
+BUILD_CONTEXT_DIR=$(mktemp -d)
+trap "rm -rf $BUILD_CONTEXT_DIR" EXIT
+
+# Copy Dockerfile to build context
+cp Dockerfile "$BUILD_CONTEXT_DIR/"
+
+# Create symlink to ccache directory in build context
+if [ "$SHARED_CCACHE" = "true" ] || [ "$BUILD_TTMETAL" = "true" ]; then
+    ln -s "$CCACHE_HOST_DIR" "$BUILD_CONTEXT_DIR/host-ccache"
+fi
+
+# Enable BuildKit for advanced features
+export DOCKER_BUILDKIT=1
+export BUILDKIT_PROGRESS=plain
+
+# Build the image
+echo "Starting Docker build..."
+docker build \
+    --build-arg BUILD_TTMETAL=$BUILD_TTMETAL \
+    --build-arg SHARED_CCACHE=$SHARED_CCACHE \
+    --build-arg BUILD_TYPE=$BUILD_TYPE \
+    -t $IMAGE_TAG \
+    -f "$BUILD_CONTEXT_DIR/Dockerfile" \
+    "$BUILD_CONTEXT_DIR"
+
+BUILD_RESULT=$?
+
+if [ $BUILD_RESULT -eq 0 ]; then
+    echo "Successfully built image: $IMAGE_TAG"
+    
+    # Show updated ccache size if applicable
+    if [ "$SHARED_CCACHE" = "true" ] || [ "$BUILD_TTMETAL" = "true" ]; then
+        if [ -d "$CCACHE_HOST_DIR" ]; then
+            CCACHE_SIZE_AFTER=$(du -sh "$CCACHE_HOST_DIR" 2>/dev/null | cut -f1)
+            echo "  Updated ccache size: ${CCACHE_SIZE_AFTER:-empty}"
+        fi
+    fi
+else
+    echo "Failed to build image"
+    exit 1
+fi
+

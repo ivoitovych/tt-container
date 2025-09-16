@@ -1,0 +1,159 @@
+# syntax=docker/dockerfile:1.4
+# Use Ubuntu 22.04 as base (matching your environment)
+FROM ubuntu:22.04
+
+# Build arguments
+ARG BUILD_TTMETAL=false
+ARG SHARED_CCACHE=false
+ARG BUILD_TYPE=Debug
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TT_METAL_HOME=/workspace/tt-metal
+ENV PYTHONPATH=/workspace/tt-metal
+ENV ARCH_NAME=wormhole_b0
+ENV PATH=/opt/cmake/bin:$PATH
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    # Basic tools
+    sudo \
+    wget \
+    curl \
+    git \
+    git-lfs \
+    vim \
+    nano \
+    # Build tools
+    build-essential \
+    dkms \
+    ccache \
+    ninja-build \
+    pkg-config \
+    # Python
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    python3-numpy \
+    # Libraries
+    libstdc++-12-dev \
+    libmpfr-dev \
+    libgmp-dev \
+    libmpc-dev \
+    libnuma-dev \
+    libhwloc-dev \
+    libtbb-dev \
+    libcapstone-dev \
+    # Additional tools
+    cargo \
+    pandoc \
+    graphviz \
+    doxygen \
+    texlive-latex-base \
+    # System tools
+    kmod \
+    pciutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install CMake 3.30.9 from source (required for tt-train)
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.30.9/cmake-3.30.9-linux-x86_64.tar.gz && \
+    tar -xzf cmake-3.30.9-linux-x86_64.tar.gz && \
+    mv cmake-3.30.9-linux-x86_64 /opt/cmake && \
+    rm cmake-3.30.9-linux-x86_64.tar.gz && \
+    ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake && \
+    ln -s /opt/cmake/bin/ctest /usr/local/bin/ctest && \
+    ln -s /opt/cmake/bin/cpack /usr/local/bin/cpack
+
+# Configure git and git-lfs
+RUN git config --global user.email "docker@tt-metal.local" && \
+    git config --global user.name "Docker User" && \
+    git lfs install
+
+# Create workspace directory
+WORKDIR /workspace
+
+# Clone repositories
+RUN git clone https://github.com/tenstorrent/tt-kmd.git && \
+    git clone https://github.com/tenstorrent/tt-flash.git && \
+    git clone https://github.com/tenstorrent/tt-system-tools.git && \
+    git clone https://github.com/tenstorrent/tt-smi.git && \
+    git clone https://github.com/tenstorrent/tt-metal.git
+
+# Comprehensive tt-metal initialization
+WORKDIR /workspace/tt-metal
+RUN git pull && \
+    git submodule update --init --recursive && \
+    git lfs pull && \
+    git submodule foreach --recursive "git lfs pull && git submodule update --init --recursive" && \
+    # Ensure all submodules are properly initialized
+    git submodule sync --recursive && \
+    git submodule update --init --recursive --force
+
+# Install tt-metal dependencies
+RUN ./install_dependencies.sh || true
+
+# Create Python virtual environment for tt-metal
+RUN ./create_venv.sh
+
+# Conditionally build tt-metal with host ccache mount
+WORKDIR /workspace/tt-metal
+RUN --mount=type=bind,source=/host-ccache,target=/ccache,rw \
+    if [ "$BUILD_TTMETAL" = "true" ]; then \
+        echo "Building tt-metal with build type: ${BUILD_TYPE}" && \
+        echo "Using ccache at /ccache" && \
+        export CCACHE_DIR=/ccache && \
+        export PATH=/usr/lib/ccache:$PATH && \
+        # Configure ccache
+        ccache -M 10G && \
+        ccache -s && \
+        echo "Initial ccache statistics:" && \
+        ccache -z && \
+        # Build tt-metal
+        . python_env/bin/activate && \
+        BUILD_TYPE_LOWER=$(echo ${BUILD_TYPE} | tr '[:upper:]' '[:lower:]') && \
+        ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
+        # Show ccache results
+        echo "Final ccache statistics:" && \
+        ccache -s && \
+        deactivate; \
+    else \
+        echo "Skipping tt-metal build (BUILD_TTMETAL=false)"; \
+    fi
+
+# Install tt-smi
+WORKDIR /workspace/tt-smi
+RUN python3 -m venv .venv && \
+    . .venv/bin/activate && \
+    pip3 install --upgrade pip && \
+    pip install . && \
+    deactivate
+
+# Install tt-flash
+WORKDIR /workspace/tt-flash
+RUN python3 -m venv .venv && \
+    . .venv/bin/activate && \
+    pip3 install --upgrade pip && \
+    pip install . && \
+    deactivate
+
+# Set working directory back to tt-metal
+WORKDIR /workspace/tt-metal
+
+# Configure ccache for runtime (when container is running)
+RUN echo 'export CCACHE_DIR=/ccache' >> /etc/profile.d/ccache.sh && \
+    echo 'export PATH=/usr/lib/ccache:$PATH' >> /etc/profile.d/ccache.sh
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+source /workspace/tt-metal/python_env/bin/activate\n\
+if [ -d "/ccache" ]; then\n\
+    export CCACHE_DIR=/ccache\n\
+    export PATH=/usr/lib/ccache:$PATH\n\
+fi\n\
+exec "$@"' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/bash"]
+
