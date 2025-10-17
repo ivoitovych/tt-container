@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Generate image tag based on options
-IMAGE_TAG="tt-metal-env"
+IMAGE_TAG="${USER}-tt-metal-env"
 if [ "$BUILD_TTMETAL" = "true" ]; then
     IMAGE_TAG="${IMAGE_TAG}-built-${BUILD_TYPE,,}"
 else

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Default values
-IMAGE_TAG="tt-metal-env-built-debug"  # Default to built image
-CONTAINER_NAME="tt-metal-container"
+IMAGE_TAG="${USER}-tt-metal-env-built-debug"  # Default to built image
+CONTAINER_NAME="${USER}-tt-metal-container"
 CCACHE_HOST_DIR="${HOME}/.cache/ccache-docker"
 MOUNT_WORKSPACE=false
 WORKSPACE_DIR="$(pwd)/workspace"
@@ -48,15 +48,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --base)
-            IMAGE_TAG="tt-metal-env-base"
+            IMAGE_TAG="${USER}-tt-metal-env-base"
             shift
             ;;
         --built-debug)
-            IMAGE_TAG="tt-metal-env-built-debug"
+            IMAGE_TAG="${USER}-tt-metal-env-built-debug"
             shift
             ;;
         --built-release)
-            IMAGE_TAG="tt-metal-env-built-release"
+            IMAGE_TAG="${USER}-tt-metal-env-built-release"
             shift
             ;;
         -h|--help)
@@ -86,7 +86,7 @@ done
 if ! docker images | grep -q "^${IMAGE_TAG}"; then
     echo "Error: Docker image '$IMAGE_TAG' not found!"
     echo "Available images:"
-    docker images | grep "tt-metal-env" | awk '{print "  " $1 ":" $2}'
+    docker images | grep "${USER}-tt-metal-env" | awk '{print "  " $1 ":" $2}'
     echo ""
     echo "Build an image first using: ./build_tt_docker.sh"
     exit 1
