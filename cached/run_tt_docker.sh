@@ -62,7 +62,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --image TAG         Docker image tag to use [default: tt-metal-env-built-debug]"
+            echo "  --image TAG         Docker image tag to use [default: ${USER}-tt-metal-env-built-debug]"
             echo "  --name NAME         Container name"
             echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache-docker]"
             echo "  --no-ccache         Don't mount ccache directory"
@@ -116,10 +116,10 @@ if [ "$USE_CCACHE" = "true" ]; then
         echo "Creating ccache directory: $CCACHE_HOST_DIR"
         mkdir -p "$CCACHE_HOST_DIR"
     fi
-    
+
     # Ensure proper permissions
     chmod 755 "$CCACHE_HOST_DIR"
-    
+
     VOLUME_MOUNTS="$VOLUME_MOUNTS -v $CCACHE_HOST_DIR:/ccache:rw"
     CCACHE_SIZE=$(du -sh "$CCACHE_HOST_DIR" 2>/dev/null | cut -f1)
     echo "  Mounting ccache: $CCACHE_HOST_DIR -> /ccache (size: ${CCACHE_SIZE:-empty})"

@@ -5,6 +5,7 @@ FROM ubuntu:22.04
 # Build arguments
 ARG BUILD_TTMETAL=true
 ARG BUILD_TYPE=Debug
+ARG TT_METAL_BRANCH=main
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -83,16 +84,15 @@ RUN --mount=type=ssh \
     git clone git@github.com:tenstorrent/tt-smi.git && \
     git clone git@github.com:tenstorrent/tt-metal.git
 
-# Comprehensive tt-metal initialization
+# Checkout specific branch/commit for tt-metal and initialize
 WORKDIR /workspace/tt-metal
 RUN --mount=type=ssh \
-    git pull && \
+    git fetch --all --tags && \
+    git checkout ${TT_METAL_BRANCH} && \
+    git submodule sync --recursive && \
     git submodule update --init --recursive && \
     git lfs pull && \
-    git submodule foreach --recursive "git lfs pull && git submodule update --init --recursive" && \
-    # Ensure all submodules are properly initialized
-    git submodule sync --recursive && \
-    git submodule update --init --recursive --force
+    git submodule foreach --recursive 'git lfs pull'
 
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true

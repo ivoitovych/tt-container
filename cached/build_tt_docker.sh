@@ -6,6 +6,7 @@ BUILD_TYPE="Debug"
 IMAGE_TAG_SUFFIX=""
 CCACHE_HOST_DIR="${HOME}/.cache/ccache-docker"
 SSH_KEY_PATH="${HOME}/.ssh"
+TT_METAL_BRANCH="main"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --build-type)
             BUILD_TYPE="$2"
+            shift 2
+            ;;
+        --branch|--tt-metal-branch)
+            TT_METAL_BRANCH="$2"
             shift 2
             ;;
         --tag-suffix)
@@ -39,6 +44,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-build          Don't build tt-metal during image creation"
             echo "  --skip-ttmetal      Same as --no-build"
             echo "  --build-type TYPE   Build type (Debug/Release) [default: Debug]"
+            echo "  --branch BRANCH     tt-metal branch or commit hash [default: main]"
             echo "  --tag-suffix SUFFIX Custom suffix for image tag"
             echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache-docker]"
             echo "  --ssh-key PATH      Path to SSH keys directory [default: ~/.ssh]"
@@ -61,6 +67,11 @@ if [ "$BUILD_TTMETAL" = "true" ]; then
 else
     IMAGE_TAG="${IMAGE_TAG}-base"
 fi
+if [ "$TT_METAL_BRANCH" != "main" ]; then
+    # Sanitize branch name for docker tag (replace / with -)
+    BRANCH_TAG=$(echo "$TT_METAL_BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-20)
+    IMAGE_TAG="${IMAGE_TAG}-${BRANCH_TAG}"
+fi
 if [ -n "$IMAGE_TAG_SUFFIX" ]; then
     IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"
 fi
@@ -69,6 +80,7 @@ echo "Building Docker image: $IMAGE_TAG"
 echo "Configuration:"
 echo "  BUILD_TTMETAL: $BUILD_TTMETAL"
 echo "  BUILD_TYPE: $BUILD_TYPE"
+echo "  TT_METAL_BRANCH: $TT_METAL_BRANCH"
 echo "  SSH_KEY_PATH: $SSH_KEY_PATH"
 
 # Check if SSH keys exist
@@ -103,6 +115,7 @@ docker build \
     --ssh default \
     --build-arg BUILD_TTMETAL=$BUILD_TTMETAL \
     --build-arg BUILD_TYPE=$BUILD_TYPE \
+    --build-arg TT_METAL_BRANCH=$TT_METAL_BRANCH \
     -t $IMAGE_TAG \
     -f Dockerfile \
     .
@@ -114,7 +127,7 @@ ssh-agent -k
 
 if [ $BUILD_RESULT -eq 0 ]; then
     echo "Successfully built image: $IMAGE_TAG"
-    
+
     # Show updated ccache size if applicable
     if [ -d "$CCACHE_HOST_DIR" ]; then
         CCACHE_SIZE_AFTER=$(du -sh "$CCACHE_HOST_DIR" 2>/dev/null | cut -f1)
