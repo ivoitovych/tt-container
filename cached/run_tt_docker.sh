@@ -83,7 +83,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check if image exists
-if ! docker images | grep -q "^${IMAGE_TAG}"; then
+if ! docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
     echo "Error: Docker image '$IMAGE_TAG' not found!"
     echo "Available images:"
     docker images | grep "${USER}-tt-metal-env" | awk '{print "  " $1 ":" $2}'
