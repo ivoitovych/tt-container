@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Default values
-IMAGE_TAG="${USER}-tt-metal-env-built-debug"  # Default to built image
+IMAGE_TAG=""  # Will auto-detect most recent
 CONTAINER_NAME="${USER}-tt-metal-container"
 CCACHE_HOST_DIR="${HOME}/.cache/ccache-docker"
 MOUNT_WORKSPACE=false
@@ -47,32 +47,23 @@ while [[ $# -gt 0 ]]; do
             MOUNT_SSH=false
             shift
             ;;
-        --base)
-            IMAGE_TAG="${USER}-tt-metal-env-base"
-            shift
-            ;;
-        --built-debug)
-            IMAGE_TAG="${USER}-tt-metal-env-built-debug"
-            shift
-            ;;
-        --built-release)
-            IMAGE_TAG="${USER}-tt-metal-env-built-release"
-            shift
-            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --image TAG         Docker image tag to use [default: ${USER}-tt-metal-env-built-debug]"
+            echo "  --image TAG         Docker image to use (repository or repository:tag)"
+            echo "                      Examples:"
+            echo "                        user-tt-metal-env-built-debug-abc123def4"
+            echo "                        user-tt-metal-env-built-debug-abc123def4:latest"
+            echo "                        user-tt-metal-env-built-debug-abc123def4:backup-2025-01-10-1"
             echo "  --name NAME         Container name"
             echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache-docker]"
             echo "  --no-ccache         Don't mount ccache directory"
             echo "  --mount-workspace [DIR] Mount host directory as workspace"
             echo "  --ssh-key PATH      Path to SSH keys directory [default: ~/.ssh]"
             echo "  --no-ssh            Don't mount SSH keys"
-            echo "  --base              Use base image (no tt-metal built)"
-            echo "  --built-debug       Use pre-built debug image (default)"
-            echo "  --built-release     Use pre-built release image"
             echo "  -h, --help          Show this help message"
+            echo ""
+            echo "If no --image specified, will use the most recently created image."
             exit 0
             ;;
         *)
@@ -81,6 +72,33 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Auto-select most recent image if not specified
+if [ -z "$IMAGE_TAG" ]; then
+    echo "No image specified, looking for most recent tt-metal image..."
+
+    # Find most recently created image
+    IMAGE_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}\t{{.CreatedAt}}" | \
+                grep "^${USER}-tt-metal-env" | \
+                sort -k2 -r | \
+                head -n 1 | \
+                cut -f1)
+
+    if [ -z "$IMAGE_TAG" ]; then
+        echo "Error: No tt-metal images found!"
+        echo ""
+        echo "Build an image first using: ./build_tt_docker.sh"
+        exit 1
+    fi
+
+    echo "Auto-selected most recent: $IMAGE_TAG"
+else
+    # Add :latest if only repository name given (no tag)
+    if [[ "$IMAGE_TAG" != *:* ]]; then
+        IMAGE_TAG="${IMAGE_TAG}:latest"
+        echo "Using: $IMAGE_TAG"
+    fi
+fi
 
 # Check if image exists
 if ! docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
@@ -148,6 +166,11 @@ if [ -d "/opt/tt-flash" ]; then
     VOLUME_MOUNTS="$VOLUME_MOUNTS -v /opt/tt-flash:/opt/tt-flash:ro"
     echo "  Mounting tt-flash from host"
 fi
+
+echo ""
+echo "To backup your container state before exiting, run:"
+echo "  docker commit $CONTAINER_NAME ${IMAGE_TAG%:*}:backup-$(date +%Y-%m-%d)-N"
+echo ""
 
 # Run the container
 docker run -it --rm \

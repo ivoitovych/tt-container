@@ -1,3 +1,4 @@
+
 # Tenstorrent tt-metal Docker Development Environment
 
 A containerized development environment for Tenstorrent's tt-metal framework, providing a reproducible and isolated workspace for hardware development and testing. This repository includes a Dockerfile to set up an Ubuntu 22.04 container with necessary dependencies, tools, and optionally a pre-built tt-metal installation. Two helper scripts are provided: `build_tt_docker.sh` for building the Docker image and `run_tt_docker.sh` for launching the container.
@@ -22,14 +23,20 @@ The setup supports cloning private Tenstorrent repositories via SSH, uses ccache
    ```bash
    ./build_tt_docker.sh
    ```
-   This creates an image tagged `<user>-tt-metal-env-built-debug` with tt-metal built in Debug mode from the `main` branch.
+   This creates an image like `<user>-tt-metal-env-built-debug-eca8b5a8f1:latest` where `eca8b5a8f1` is the commit hash automatically fetched from GitHub.
 
 4. **Run a Container:**
    Launch a container from the built image:
    ```bash
    ./run_tt_docker.sh
    ```
-   You'll be dropped into an interactive shell with tt-metal ready to use, Python venv activated, and ccache configured.
+   You'll be dropped into an interactive shell with tt-metal ready to use, Python venv activated, and ccache configured. The script automatically selects the most recently created image.
+
+5. **Backup Your Container (optional):**
+   To save your work after making changes, from another terminal:
+   ```bash
+   docker commit <user>-tt-metal-container <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+   ```
 
 ## Overview
 
@@ -70,7 +77,7 @@ lsmod | grep tenstorrent
 
 ## Building the Docker Image
 
-Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in Debug mode from the `main` branch.
+Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in Debug mode from the `main` branch. The script automatically fetches the commit hash from GitHub and includes it in the image name.
 
 ### Usage
 ```bash
@@ -81,7 +88,9 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 - `--no-build` or `--skip-ttmetal`: Skip building tt-metal (creates a base image for manual builds inside the container).
 - `--build-type TYPE`: Set build type (`Debug` or `Release`). Default: `Debug`.
 - `--branch BRANCH` or `--tt-metal-branch BRANCH`: Specify tt-metal branch or commit hash. Default: `main`.
+- `--commit-hash HASH`: Manually specify commit hash (skips auto-fetch from GitHub).
 - `--tag-suffix SUFFIX`: Add a custom suffix to the image tag.
+- `--force`: Force rebuild even if image for this commit already exists.
 - `--ccache-dir DIR`: Host ccache directory. Default: `~/.cache/ccache-docker`.
 - `--ssh-key PATH`: Path to SSH keys directory. Default: `~/.ssh`.
 - `-h` or `--help`: Show help message.
@@ -90,25 +99,32 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 - Default build (Debug mode, main branch):
   ```bash
   ./build_tt_docker.sh
-  # Creates: <user>-tt-metal-env-built-debug
+  # Creates: <user>-tt-metal-env-built-debug-eca8b5a8f1:latest
   ```
 
 - Release build:
   ```bash
   ./build_tt_docker.sh --build-type Release
-  # Creates: <user>-tt-metal-env-built-release
+  # Creates: <user>-tt-metal-env-built-release-eca8b5a8f1:latest
   ```
 
 - Base image (no pre-built tt-metal):
   ```bash
   ./build_tt_docker.sh --no-build
-  # Creates: <user>-tt-metal-env-base
+  # Creates: <user>-tt-metal-env-base-eca8b5a8f1:latest
   ```
 
-- Base image from a specific branch:
+- Specific branch:
   ```bash
-  ./build_tt_docker.sh --no-build --branch my-feature-branch
-  # Creates: <user>-tt-metal-env-base-my-feature-branch
+  ./build_tt_docker.sh --branch feature/my-branch
+  # Fetches commit hash for that branch automatically
+  # Creates: <user>-tt-metal-env-built-debug-a1b2c3d4e5:latest
+  ```
+
+- Force rebuild of existing image:
+  ```bash
+  ./build_tt_docker.sh --force
+  # Replaces the 'latest' tag of existing image for this commit
   ```
 
 - Advanced configuration:
@@ -121,11 +137,13 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
     --ssh-key /path/to/ssh/keys
   ```
 
-The script generates an image tag based on options (e.g., incorporating branch name, sanitized for Docker) and forwards SSH for cloning.
+**Note:** If you try to build an image for a commit that already exists, the script will show an error with options to use the existing image, backup and rebuild, or build a different commit.
+
+The script generates an image name including the commit hash (e.g., `user-tt-metal-env-built-debug-eca8b5a8f1`) to prevent conflicts when working with multiple commits.
 
 ## Running the Container
 
-Use `run_tt_docker.sh` to launch the container. It mounts necessary devices and volumes for hardware access and development.
+Use `run_tt_docker.sh` to launch the container. It mounts necessary devices and volumes for hardware access and development. If no image is specified, it automatically selects the most recently created image.
 
 ### Usage
 ```bash
@@ -133,38 +151,40 @@ Use `run_tt_docker.sh` to launch the container. It mounts necessary devices and 
 ```
 
 ### Options
-- `--image TAG`: Docker image tag to use. Default: `<user>-tt-metal-env-built-debug`.
+- `--image TAG`: Docker image to use (repository name or repository:tag). Examples: `user-tt-metal-env-built-debug-eca8b5a8f1` or `user-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1`.
 - `--name NAME`: Container name. Default: `<user>-tt-metal-container`.
 - `--ccache-dir DIR`: Host ccache directory. Default: `~/.cache/ccache-docker`.
 - `--no-ccache`: Don't mount ccache.
 - `--mount-workspace [DIR]`: Mount a host directory as `/workspace/user`. Default DIR: `./workspace`.
 - `--ssh-key PATH`: Path to SSH keys directory. Default: `~/.ssh`.
 - `--no-ssh`: Don't mount SSH keys.
-- `--base`: Use base image (no pre-built tt-metal).
-- `--built-debug`: Use pre-built Debug image (default).
-- `--built-release`: Use pre-built Release image.
 - `-h` or `--help`: Show help message.
 
 ### Examples
-- Default run:
+- Default run (auto-selects most recent image):
   ```bash
   ./run_tt_docker.sh
   ```
 
-- Base image with workspace mount:
+- Run specific image:
   ```bash
-  ./run_tt_docker.sh --base --mount-workspace /path/to/my/workspace
+  ./run_tt_docker.sh --image <user>-tt-metal-env-built-debug-eca8b5a8f1
   ```
 
-- Release image without ccache:
+- Run from a backup:
   ```bash
-  ./run_tt_docker.sh --built-release --no-ccache
+  ./run_tt_docker.sh --image <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+  ```
+
+- With workspace mount:
+  ```bash
+  ./run_tt_docker.sh --mount-workspace /path/to/my/workspace
   ```
 
 - Custom configuration:
   ```bash
   ./run_tt_docker.sh \
-    --image myuser-tt-metal-env-built-release \
+    --image myuser-tt-metal-env-built-release-abc123def4 \
     --name my-dev-container \
     --mount-workspace ~/tt-projects
   ```
@@ -174,6 +194,18 @@ Inside the container:
 - tt-metal is at `/workspace/tt-metal` (if built).
 - tt-smi is installed and available.
 - Use `tt-smi` or other tools to interact with hardware.
+
+### Backup Workflow
+To save your container state with all installed packages and changes:
+```bash
+# From another terminal while container is running
+docker commit <user>-tt-metal-container <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+
+# Later, run from that backup
+./run_tt_docker.sh --image <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+```
+
+The `latest` tag is your fresh build, and `backup-YYYY-MM-DD-N` tags are your saved container states.
 
 ## Dockerfile Overview
 
@@ -276,10 +308,13 @@ cd /workspace/user
 Run multiple containers with different configurations:
 ```bash
 # Terminal 1: Debug environment
-./run_tt_docker.sh --name debug-env --built-debug
+./run_tt_docker.sh --name debug-env --image <user>-tt-metal-env-built-debug-abc123
 
-# Terminal 2: Release environment  
-./run_tt_docker.sh --name release-env --built-release
+# Terminal 2: Release environment
+./run_tt_docker.sh --name release-env --image <user>-tt-metal-env-built-release-abc123
+
+# Terminal 3: Different commit
+./run_tt_docker.sh --name test-env --image <user>-tt-metal-env-built-debug-def456
 ```
 
 ### Custom Workspace Structure
@@ -333,11 +368,16 @@ ccache -z
 
 ## Image Tags
 
-Images are tagged based on configuration:
-- `<user>-tt-metal-env-base`: Base image without pre-built tt-metal.
-- `<user>-tt-metal-env-built-debug`: Pre-built Debug configuration (default).
-- `<user>-tt-metal-env-built-release`: Pre-built Release configuration.
-- `<user>-tt-metal-env-built-{type}-{branch}`: Branch-specific builds (sanitized branch name).
+Images are named with the pattern `<user>-tt-metal-env-<type>-<commit-hash>:<tag>`:
+- Repository includes commit hash: `<user>-tt-metal-env-built-debug-eca8b5a8f1`
+- `latest` tag: Fresh build from Dockerfile
+- `backup-YYYY-MM-DD-N` tags: Saved container states via `docker commit`
+
+Examples:
+- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:latest` - Fresh Debug build
+- `ivoitovych-tt-metal-env-built-release-eca8b5a8f1:latest` - Fresh Release build
+- `ivoitovych-tt-metal-env-base-eca8b5a8f1:latest` - Base image without pre-built tt-metal
+- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1` - Saved container state
 
 View all available images:
 ```bash
@@ -355,7 +395,7 @@ docker images | grep tt-metal-env
 ## Troubleshooting
 
 ### Device Not Found
-**Problem**: "Warning: /dev/tenstorrent device not found!"  
+**Problem**: "Warning: /dev/tenstorrent device not found!"
 **Solution**:
 ```bash
 # Load kernel module on host
@@ -366,7 +406,7 @@ ls -l /dev/tenstorrent
 ```
 
 ### SSH Key Issues
-**Problem**: Build fails with "Permission denied (publickey)".  
+**Problem**: Build fails with "Permission denied (publickey)".
 **Solutions**:
 ```bash
 # Verify SSH keys exist
@@ -381,7 +421,7 @@ ssh-add ~/.ssh/id_rsa
 ```
 
 ### Image Not Found
-**Problem**: "Error: Docker image not found!"  
+**Problem**: "Error: Docker image not found!"
 **Solution**:
 ```bash
 # List available images
@@ -391,8 +431,25 @@ docker images | grep tt-metal-env
 ./build_tt_docker.sh
 ```
 
+### Image Already Exists
+**Problem**: "ERROR: Image repository already exists. Build cancelled."
+**Solution**: You've already built an image for this commit. Options:
+```bash
+# Use existing image
+./run_tt_docker.sh
+
+# Build different commit
+./build_tt_docker.sh --branch other-branch
+
+# Force rebuild (replaces 'latest' tag)
+./build_tt_docker.sh --force
+
+# Remove existing images for this commit
+docker rmi $(docker images <repository-name> -q)
+```
+
 ### Build Fails
-**Problem**: Docker build errors.  
+**Problem**: Docker build errors.
 **Solutions**:
 - Check disk space: `df -h`
 - Clear Docker cache: `docker system prune -a`
@@ -401,7 +458,7 @@ docker images | grep tt-metal-env
 - Review build logs for specific errors
 
 ### Kernel Module Not Loaded
-**Problem**: Warning about tenstorrent kernel module not loaded.  
+**Problem**: Warning about tenstorrent kernel module not loaded.
 **Solution**:
 ```bash
 # Load module on host
@@ -415,7 +472,7 @@ echo "tenstorrent" | sudo tee -a /etc/modules
 ```
 
 ### Ccache Not Working
-**Problem**: Builds are slow despite ccache.  
+**Problem**: Builds are slow despite ccache.
 **Solutions**:
 ```bash
 # Check ccache is mounted
@@ -433,7 +490,7 @@ echo $PATH | grep ccache
 ```
 
 ### Permission Issues
-**Problem**: Cannot write to mounted directories.  
+**Problem**: Cannot write to mounted directories.
 **Solution**: Container runs as root by default. Ensure host directories have appropriate permissions:
 ```bash
 chmod 755 ~/.cache/ccache-docker
@@ -462,5 +519,4 @@ Note: Tenstorrent repositories (tt-metal, tt-smi, tt-system-tools) are subject t
 - [Tenstorrent tt-metal Repository](https://github.com/tenstorrent/tt-metal)
 - [Tenstorrent Documentation](https://docs.tenstorrent.com/)
 - [Docker BuildKit Documentation](https://docs.docker.com/build/buildkit/)
-
 
