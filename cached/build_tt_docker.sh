@@ -80,15 +80,21 @@ if [ -z "$COMMIT_HASH" ]; then
     # Try to fetch the commit hash using git ls-remote
     # First, try as a branch
     COMMIT_HASH=$(git ls-remote https://github.com/tenstorrent/tt-metal.git "refs/heads/$TT_METAL_BRANCH" 2>/dev/null | cut -f1)
+    CHECKOUT_REF="$TT_METAL_BRANCH"
+    REF_TYPE="branch"
 
     # If not found as branch, try as a tag
     if [ -z "$COMMIT_HASH" ]; then
         COMMIT_HASH=$(git ls-remote https://github.com/tenstorrent/tt-metal.git "refs/tags/$TT_METAL_BRANCH" 2>/dev/null | cut -f1)
+        CHECKOUT_REF="$TT_METAL_BRANCH"
+        REF_TYPE="tag"
     fi
 
     # If still not found, try with ^{} suffix for annotated tags
     if [ -z "$COMMIT_HASH" ]; then
         COMMIT_HASH=$(git ls-remote https://github.com/tenstorrent/tt-metal.git "refs/tags/$TT_METAL_BRANCH^{}" 2>/dev/null | cut -f1)
+        CHECKOUT_REF="$TT_METAL_BRANCH"
+        REF_TYPE="tag"
     fi
 
     # If still not found, assume it's already a commit hash
@@ -96,15 +102,20 @@ if [ -z "$COMMIT_HASH" ]; then
         echo "Warning: Could not find branch or tag '$TT_METAL_BRANCH' on GitHub"
         echo "Assuming it's a commit hash or will be resolved during clone"
         COMMIT_HASH="$TT_METAL_BRANCH"
+        CHECKOUT_REF="$TT_METAL_BRANCH"
+        REF_TYPE="commit"
     fi
 else
     echo "Using provided commit hash: $COMMIT_HASH"
+    CHECKOUT_REF="$COMMIT_HASH"
+    REF_TYPE="commit"
 fi
 
 # Truncate commit hash to first 10 characters for image name
 COMMIT_HASH_SHORT="${COMMIT_HASH:0:10}"
 
 echo "Commit hash (short): $COMMIT_HASH_SHORT"
+echo "Checkout ref: $CHECKOUT_REF ($REF_TYPE)"
 
 # Generate image repository name based on options
 IMAGE_REPO="${USER}-tt-metal-env"
@@ -204,7 +215,9 @@ docker build \
     --ssh default \
     --build-arg BUILD_TTMETAL=$BUILD_TTMETAL \
     --build-arg BUILD_TYPE=$BUILD_TYPE \
-    --build-arg TT_METAL_BRANCH=$TT_METAL_BRANCH \
+    --build-arg CHECKOUT_REF=$CHECKOUT_REF \
+    --build-arg EXPECTED_COMMIT_HASH=$COMMIT_HASH \
+    --build-arg REF_TYPE=$REF_TYPE \
     -t "${FULL_IMAGE_NAME}" \
     -f Dockerfile \
     .

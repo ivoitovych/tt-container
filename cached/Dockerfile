@@ -5,7 +5,9 @@ FROM ubuntu:22.04
 # Build arguments
 ARG BUILD_TTMETAL=true
 ARG BUILD_TYPE=Debug
-ARG TT_METAL_BRANCH=main
+ARG CHECKOUT_REF=main
+ARG EXPECTED_COMMIT_HASH=unknown
+ARG REF_TYPE=branch
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -78,17 +80,41 @@ RUN mkdir -p /root/.ssh && \
 # Create workspace directory
 WORKDIR /workspace
 
+# Cache buster: Include expected commit hash to invalidate cache when it changes
+RUN echo "Expected commit: ${EXPECTED_COMMIT_HASH}" > /workspace/.expected_commit
+
 # Clone repositories using SSH
 RUN --mount=type=ssh \
     git clone git@github.com:tenstorrent/tt-system-tools.git && \
     git clone git@github.com:tenstorrent/tt-smi.git && \
     git clone git@github.com:tenstorrent/tt-metal.git
 
-# Checkout specific branch/commit for tt-metal and initialize
+# Checkout specific branch/commit for tt-metal and verify
 WORKDIR /workspace/tt-metal
 RUN --mount=type=ssh \
+    set -e && \
     git fetch --all --tags && \
-    git checkout ${TT_METAL_BRANCH} && \
+    echo "Checking out: ${CHECKOUT_REF} (${REF_TYPE})" && \
+    git checkout ${CHECKOUT_REF} && \
+    ACTUAL_HASH=$(git rev-parse HEAD) && \
+    echo "Checked out commit: ${ACTUAL_HASH}" && \
+    echo "Expected commit:    ${EXPECTED_COMMIT_HASH}" && \
+    if [ "${ACTUAL_HASH}" != "${EXPECTED_COMMIT_HASH}" ]; then \
+        echo "" && \
+        echo "ERROR: Commit hash mismatch!" && \
+        echo "The ${REF_TYPE} '${CHECKOUT_REF}' has moved during the build." && \
+        echo "Expected: ${EXPECTED_COMMIT_HASH}" && \
+        echo "Got:      ${ACTUAL_HASH}" && \
+        echo "" && \
+        echo "This can happen if:" && \
+        echo "  - New commits were pushed to ${CHECKOUT_REF} during build" && \
+        echo "  - Network delay between hash fetch and checkout" && \
+        echo "" && \
+        echo "Solution: Run the build script again to use the new commit hash." && \
+        echo "" && \
+        exit 1; \
+    fi && \
+    echo "Commit hash verified successfully!" && \
     git submodule sync --recursive && \
     git submodule update --init --recursive && \
     git lfs pull && \

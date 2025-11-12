@@ -73,6 +73,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate that image wasn't mistakenly passed as --name
+if [ -n "$CONTAINER_NAME" ] && [[ "$CONTAINER_NAME" =~ ^.*-tt-metal-env-.* ]]; then
+    echo "ERROR: It looks like you passed an image name to --name instead of --image"
+    echo "You specified: --name $CONTAINER_NAME"
+    echo ""
+    echo "Did you mean:"
+    echo "  ./run_tt_docker.sh --image $CONTAINER_NAME"
+    echo ""
+    echo "Or with a custom container name:"
+    echo "  ./run_tt_docker.sh --image $CONTAINER_NAME --name <container-name>"
+    exit 1
+fi
+
 # Auto-select most recent image if not specified
 if [ -z "$IMAGE_TAG" ]; then
     echo "No image specified, looking for most recent tt-metal image..."

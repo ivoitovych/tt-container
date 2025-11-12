@@ -222,6 +222,15 @@ The Dockerfile:
 - `BUILD_TYPE` (Debug/Release): Build type. Default: Debug.
 - `TT_METAL_BRANCH` (branch/commit): tt-metal version. Default: main.
 
+### Build Arguments
+- `BUILD_TTMETAL` (true/false): Build tt-metal? Default: true.
+- `BUILD_TYPE` (Debug/Release): Build type. Default: Debug.
+- `CHECKOUT_REF` (branch/tag/commit): What to checkout in the container. Default: main.
+- `EXPECTED_COMMIT_HASH`: The commit hash that should result from the checkout (for verification).
+- `REF_TYPE` (branch/tag/commit): Type of reference being checked out.
+
+**Note:** The build script automatically sets these values. `CHECKOUT_REF` preserves branch/tag names to maintain tracking, while `EXPECTED_COMMIT_HASH` ensures the checkout results in the correct commit.
+
 ## Container Features
 
 ### Included Software
