@@ -205,9 +205,25 @@ fi
 export DOCKER_BUILDKIT=1
 export BUILDKIT_PROGRESS=plain
 
-# Start SSH agent and add keys for build
+# Start SSH agent and add ALL available keys for build
 eval $(ssh-agent -s)
-ssh-add "$SSH_KEY_PATH/id_rsa" 2>/dev/null || ssh-add "$SSH_KEY_PATH/id_ed25519" 2>/dev/null || true
+for key in "$SSH_KEY_PATH"/id_*; do
+    # Skip public keys and non-files
+    [[ "$key" == *.pub ]] && continue
+    [[ ! -f "$key" ]] && continue
+    ssh-add "$key" 2>/dev/null
+done
+
+# Verify at least one key was added
+if ! ssh-add -l >/dev/null 2>&1; then
+    echo "ERROR: No SSH keys could be added to the agent"
+    echo "Please ensure you have SSH keys in $SSH_KEY_PATH"
+    exit 1
+fi
+
+# Show which keys are loaded
+echo "SSH keys loaded:"
+ssh-add -l
 
 # Build the image with SSH forwarding
 echo "Starting Docker build..."
