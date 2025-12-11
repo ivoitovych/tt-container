@@ -99,22 +99,25 @@ RUN --mount=type=ssh \
     ACTUAL_HASH=$(git rev-parse HEAD) && \
     echo "Checked out commit: ${ACTUAL_HASH}" && \
     echo "Expected commit:    ${EXPECTED_COMMIT_HASH}" && \
-    if [ "${ACTUAL_HASH}" != "${EXPECTED_COMMIT_HASH}" ]; then \
-        echo "" && \
-        echo "ERROR: Commit hash mismatch!" && \
-        echo "The ${REF_TYPE} '${CHECKOUT_REF}' has moved during the build." && \
-        echo "Expected: ${EXPECTED_COMMIT_HASH}" && \
-        echo "Got:      ${ACTUAL_HASH}" && \
-        echo "" && \
-        echo "This can happen if:" && \
-        echo "  - New commits were pushed to ${CHECKOUT_REF} during build" && \
-        echo "  - Network delay between hash fetch and checkout" && \
-        echo "" && \
-        echo "Solution: Run the build script again to use the new commit hash." && \
-        echo "" && \
-        exit 1; \
-    fi && \
-    echo "Commit hash verified successfully!" && \
+    # Handle short hashes - check if actual hash starts with expected hash \
+    case "${ACTUAL_HASH}" in \
+        "${EXPECTED_COMMIT_HASH}"*) \
+            echo "Commit hash verified successfully!" ;; \
+        *) \
+            echo "" && \
+            echo "ERROR: Commit hash mismatch!" && \
+            echo "The ${REF_TYPE} '${CHECKOUT_REF}' has moved during the build." && \
+            echo "Expected: ${EXPECTED_COMMIT_HASH}" && \
+            echo "Got:      ${ACTUAL_HASH}" && \
+            echo "" && \
+            echo "This can happen if:" && \
+            echo "  - New commits were pushed to ${CHECKOUT_REF} during build" && \
+            echo "  - Network delay between hash fetch and checkout" && \
+            echo "" && \
+            echo "Solution: Run the build script again to use the new commit hash." && \
+            echo "" && \
+            exit 1 ;; \
+    esac && \
     git submodule sync --recursive && \
     git submodule update --init --recursive && \
     git lfs pull && \
