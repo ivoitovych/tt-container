@@ -16,7 +16,6 @@ ENV PYTHONPATH=/workspace/tt-metal
 ENV ARCH_NAME=wormhole_b0
 ENV PATH=/opt/cmake/bin:$PATH
 
-# Install basic dependencies
 RUN apt-get update && apt-get install -y \
     # Basic tools
     sudo \
@@ -50,6 +49,9 @@ RUN apt-get update && apt-get install -y \
     libhwloc-dev \
     libtbb-dev \
     libcapstone-dev \
+    # MPI support
+    libopenmpi-dev \
+    openmpi-bin \
     # Additional tools
     cargo \
     pandoc \
