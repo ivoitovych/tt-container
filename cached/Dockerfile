@@ -63,6 +63,11 @@ RUN apt-get update && apt-get install -y \
     pciutils \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure wget for retries on network failures
+RUN echo "tries = 5" >> /etc/wgetrc && \
+    echo "waitretry = 10" >> /etc/wgetrc && \
+    echo "retry_connrefused = on" >> /etc/wgetrc
+
 # Install CMake 3.30.9 from source (required for tt-train)
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.30.9/cmake-3.30.9-linux-x86_64.tar.gz && \
     tar -xzf cmake-3.30.9-linux-x86_64.tar.gz && \
