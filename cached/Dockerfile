@@ -12,8 +12,9 @@ ARG REF_TYPE=branch
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TT_METAL_HOME=/workspace/tt-metal
-ENV PYTHONPATH=/workspace/tt-metal
-ENV ARCH_NAME=wormhole_b0
+ENV TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME
+ENV PYTHONPATH=$TT_METAL_HOME
+# ARCH_NAME removed - hardware is now auto-detected
 ENV PATH=/opt/cmake/bin:$PATH
 
 RUN apt-get update && apt-get install -y \
@@ -84,6 +85,17 @@ RUN mkdir -p /root/.ssh && \
     echo "Host github.com\n\tStrictHostKeyChecking no\n" > /root/.ssh/config && \
     chmod 600 /root/.ssh/config
 
+# Configure .bashrc for environment variables and history
+RUN echo "export TT_METAL_HOME=$TT_METAL_HOME" >> /root/.bashrc && \
+    echo 'export TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME' >> /root/.bashrc && \
+    echo 'export PYTHONPATH=$TT_METAL_HOME' >> /root/.bashrc && \
+    sed -i '/^HISTSIZE=/d; /^HISTFILESIZE=/d' /root/.bashrc && \
+    echo 'HISTSIZE=-1' >> /root/.bashrc && \
+    echo 'HISTFILESIZE=-1' >> /root/.bashrc
+
+# Pre-populate bash history with useful commands
+RUN echo "git log --pretty=tformat:\"%C(yellow)%h%C(reset) - %C(green)%ad%C(reset) - %C(blue)%an%C(reset) - %C(white)%s%C(reset) %C(red)%d%C(reset)\" --date=format:'%Y-%m-%d %H:%M' --graph -30" >> /root/.bash_history
+
 # Create workspace directory
 WORKDIR /workspace
 
@@ -97,7 +109,7 @@ RUN --mount=type=ssh \
     git clone git@github.com:tenstorrent/tt-metal.git
 
 # Checkout specific branch/commit for tt-metal and verify
-WORKDIR /workspace/tt-metal
+WORKDIR $TT_METAL_HOME
 RUN --mount=type=ssh \
     set -e && \
     git fetch --all --tags && \
@@ -142,7 +154,7 @@ RUN mkdir -p /etc/ccache && \
     echo "max_size = 10G" >> /etc/ccache/ccache.conf
 
 # Build tt-metal with cache mount
-WORKDIR /workspace/tt-metal
+WORKDIR $TT_METAL_HOME
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Building tt-metal with build type: ${BUILD_TYPE}" && \
@@ -165,6 +177,24 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Skipping tt-metal build (BUILD_TTMETAL=false)"; \
     fi
 
+# Build tt-train with cache mount
+RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
+    if [ "$BUILD_TTMETAL" = "true" ]; then \
+        echo "Building tt-train with build type: ${BUILD_TYPE}" && \
+        export CCACHE_DIR=/ccache && \
+        export PATH=/usr/lib/ccache:$PATH && \
+        cd $TT_METAL_HOME/tt-train && \
+        rm -rf build/ && \
+        cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -B build -GNinja && \
+        cmake --build build --config ${BUILD_TYPE} --clean-first && \
+        echo "tt-train build completed"; \
+    else \
+        echo "Skipping tt-train build (BUILD_TTMETAL=false)"; \
+    fi
+
 # Install tt-smi
 WORKDIR /workspace/tt-smi
 RUN python3 -m venv .venv && \
@@ -174,11 +204,11 @@ RUN python3 -m venv .venv && \
     deactivate
 
 # Set working directory back to tt-metal
-WORKDIR /workspace/tt-metal
+WORKDIR $TT_METAL_HOME
 
 # Create entrypoint script
 RUN echo '#!/bin/bash\n\
-source /workspace/tt-metal/python_env/bin/activate\n\
+source $TT_METAL_HOME/python_env/bin/activate\n\
 export CCACHE_DIR=/ccache\n\
 export PATH=/usr/lib/ccache:$PATH\n\
 # Initialize ccache if directory is mounted\n\
