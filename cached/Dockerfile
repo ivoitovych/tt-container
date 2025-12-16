@@ -177,7 +177,17 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Skipping tt-metal build (BUILD_TTMETAL=false)"; \
     fi
 
-# Build tt-train with cache mount
+# Install ttml Python module (editable for development)
+RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
+        echo "Installing ttml Python module..." && \
+        . $TT_METAL_HOME/python_env/bin/activate && \
+        pip install -e $TT_METAL_HOME/tt-train && \
+        deactivate; \
+    else \
+        echo "Skipping ttml installation (BUILD_TTMETAL=false)"; \
+    fi
+
+# Build tt-train C++ components with cache mount
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Building tt-train with build type: ${BUILD_TYPE}" && \
