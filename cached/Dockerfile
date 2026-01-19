@@ -142,6 +142,23 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
+# TEMPORARY: Apply PR #36099 fix if not yet merged
+# This fixes install_dependencies.sh and tt-train to use clang-20
+# See: https://github.com/tenstorrent/tt-metal/issues/36098
+# Remove this block once PR #36099 is merged
+RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+RUN set -e && \
+    PR_STATE=$(curl -s https://api.github.com/repos/tenstorrent/tt-metal/pulls/36099 | jq -r '.merged') && \
+    echo "PR #36099 merged status: $PR_STATE" && \
+    if [ "$PR_STATE" != "true" ]; then \
+        echo "PR #36099 not yet merged, cherry-picking fix..." && \
+        git fetch https://github.com/tenstorrent/tt-metal.git ivoitovych/fix-36098-install-dependencies-clang20 && \
+        git cherry-pick --no-commit dde64cacdb && \
+        echo "Cherry-pick applied successfully"; \
+    else \
+        echo "PR #36099 already merged, no patch needed"; \
+    fi
+
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
