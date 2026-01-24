@@ -28,6 +28,7 @@ FORK_REMOTE_NAME=""
 FORK_REMOTE_URL=""
 FRESH_CLONE=false  # Track if we just cloned
 REBUILD_TT_TRAIN_ONLY=false  # Only rebuild tt-train/ttml
+FORCE_DEPS=false  # Force running install_dependencies.sh
 
 # Colors for output
 RED='\033[0;31m'
@@ -71,6 +72,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_REBUILD=true
             shift
             ;;
+        --force-deps)
+            FORCE_DEPS=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -82,6 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --debug               Build in Debug mode"
             echo "  --fork-remote NAME=URL  Add a fork remote (e.g., myfork=git@github-alt:user/tt-metal.git)"
             echo "  --rebuild-tt-train    Rebuild tt-train and ttml only (skip tt-metal build)"
+            echo "  --force-deps          Force running install_dependencies.sh"
             echo "  -h, --help            Show this help"
             exit 0
             ;;
@@ -418,26 +424,35 @@ main() {
         install_cmake
     fi
 
-    # Step 6: Check clang-17
-    log_info "Checking clang-17..."
-    if check_clang17; then
-        log_success "clang-17 installed"
-    else
-        log_warn "clang-17 not found"
+    # Step 6: Run install_dependencies.sh
+    # Always run on fresh clone or with --force-deps
+    # install_dependencies.sh installs many packages (clang-17, clang-20,
+    # libc++-17-dev, libhwloc-dev, libtbb-dev, etc.) and we can't reliably
+    # check for all of them
+    if [[ "$FRESH_CLONE" == "true" ]] || [[ "$FORCE_DEPS" == "true" ]]; then
+        if [[ "$FRESH_CLONE" == "true" ]]; then
+            log_info "Running install_dependencies.sh (fresh clone)"
+        else
+            log_info "Running install_dependencies.sh (--force-deps)"
+        fi
         if [[ "$VERIFY_ONLY" == "true" ]]; then
             log_error "Run without --verify to install dependencies"
             exit 1
         fi
         run_install_dependencies
-    fi
-
-    # Step 7: Check clang-20
-    log_info "Checking clang-20..."
-    if check_clang20; then
-        log_success "clang-20 installed"
     else
-        log_warn "clang-20 not found (may need manual install or PR #36099)"
-        # Not blocking - clang-17 is sufficient for tt-train
+        # For existing clones, check if key dependencies are present
+        log_info "Checking dependencies..."
+        if check_clang17 && check_clang20; then
+            log_success "clang-17 and clang-20 installed"
+        else
+            log_warn "Some dependencies missing - running install_dependencies.sh"
+            if [[ "$VERIFY_ONLY" == "true" ]]; then
+                log_error "Run without --verify to install dependencies"
+                exit 1
+            fi
+            run_install_dependencies
+        fi
     fi
 
     # Step 8: Check environment variables
