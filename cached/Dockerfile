@@ -178,10 +178,11 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     fi
 
 # Install ttml Python module (editable for development)
+# Note: create_venv.sh installs uv, so we use uv pip instead of pip
 RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Installing ttml Python module..." && \
         . $TT_METAL_HOME/python_env/bin/activate && \
-        pip install -e $TT_METAL_HOME/tt-train && \
+        uv pip install -e $TT_METAL_HOME/tt-train && \
         deactivate; \
     else \
         echo "Skipping ttml installation (BUILD_TTMETAL=false)"; \
