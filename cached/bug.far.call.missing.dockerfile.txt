@@ -1,0 +1,1 @@
+BUG: when calling script from another dir it cannot find the Dockerfile
