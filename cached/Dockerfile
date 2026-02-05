@@ -142,6 +142,16 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
+# Merge the compiler selection fix for #36993.
+# Restores tt-train/cmake/compilers.cmake (deleted in a7618b9282) so that
+# standalone builds via 'pip install -e tt-train/' auto-detect clang-20
+# instead of falling back to system GCC 11.
+RUN --mount=type=ssh \
+    echo "=== Merging fix for #36993 (compiler selection) ===" && \
+    git fetch origin ivoitovych/issue-36993-fix-gcc-constexpr-lambda && \
+    git merge FETCH_HEAD -m "Merge #36993 compiler selection fix for verification" && \
+    echo "=== Merge completed ==="
+
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
@@ -191,10 +201,17 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
 
 # Install ttml Python module (editable for development)
 # Note: create_venv.sh installs uv, so we use uv pip instead of pip
+# This also validates the compiler selection fix for #36993: scikit-build-core
+# invokes CMake in an isolated environment with no CC/CXX set, so the restored
+# FIND_AND_SET_CLANG20() in tt-train/cmake/compilers.cmake must auto-detect clang-20.
 RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Installing ttml Python module..." && \
+        echo "=== Verifying clang-20 is available (required for #36993 fix) ===" && \
+        which clang-20 && clang-20 --version | head -1 && \
+        echo "=== clang-20 check PASSED ===" && \
         . $TT_METAL_HOME/python_env/bin/activate && \
         uv pip install -e $TT_METAL_HOME/tt-train && \
+        echo "=== ttml pip install PASSED (validates #36993 fix) ===" && \
         deactivate; \
     else \
         echo "Skipping ttml installation (BUILD_TTMETAL=false)"; \
