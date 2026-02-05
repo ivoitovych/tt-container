@@ -148,6 +148,18 @@ RUN ./install_dependencies.sh || true
 # Create Python virtual environment for tt-metal
 RUN ./create_venv.sh
 
+# Verify that uv is available via venv activation (validates the symlink fix
+# for https://github.com/tenstorrent/tt-metal/issues/37007).
+# This runs in a fresh RUN step (new shell) where ~/.local/bin is NOT on PATH,
+# so the only way uv can be found is through the venv's bin/ symlink.
+RUN . $TT_METAL_HOME/python_env/bin/activate && \
+    echo "=== Verifying uv availability after venv activation ===" && \
+    echo "PATH=$PATH" && \
+    which uv && \
+    uv --version && \
+    echo "=== uv verification PASSED ===" && \
+    deactivate
+
 # Setup ccache configuration
 RUN mkdir -p /etc/ccache && \
     echo "cache_dir = /ccache" > /etc/ccache/ccache.conf && \
