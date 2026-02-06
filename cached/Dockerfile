@@ -152,11 +152,12 @@ RUN --mount=type=ssh \
 
 # === COMPILER FIX: PR #37166 (issue #36993) ===
 # Inherit compiler from tt-metal's CMakeCache.txt instead of hardcoding clang-20.
-# This is the fix we are verifying in this container build.
+# Merge the entire branch (not cherry-pick) so git sees the full delta from the
+# merge-base: compilers.cmake doesn't exist at merge-base, branch adds it cleanly.
 RUN --mount=type=ssh \
     echo "=== Merging compiler fix from myfork (PR #37166 revision) ===" && \
     git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-fix-gcc-constexpr-lambda:compiler-fix && \
-    git cherry-pick compiler-fix && \
+    git merge compiler-fix -m "Merge PR #37166 revision: compiler inheritance from CMakeCache.txt" && \
     echo "=== Compiler fix applied ==="
 
 # Install tt-metal dependencies
