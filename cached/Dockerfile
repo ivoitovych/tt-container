@@ -142,11 +142,28 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
+# Merge PR #36282 (Sexton's venv relocatability fix)
+# This PR installs uv into the venv directly, making it available after activation
+RUN --mount=type=ssh \
+    echo "=== Merging PR #36282 (venv relocatability by nsextonTT) ===" && \
+    git fetch origin pull/36282/head:pr-36282 && \
+    git merge pr-36282 -m "Merge PR #36282 for verification" && \
+    echo "=== Merge completed ==="
+
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
 # Create Python virtual environment for tt-metal
 RUN ./create_venv.sh
+
+# Verify uv is available after venv activation (tests PR #36282 fix)
+# This runs in a fresh RUN step to simulate a new shell context
+RUN echo "=== Verifying uv availability (PR #36282 test) ===" && \
+    . $TT_METAL_HOME/python_env/bin/activate && \
+    echo "PATH=$PATH" && \
+    which uv && \
+    uv --version && \
+    echo "=== uv verification PASSED ==="
 
 # Setup ccache configuration
 RUN mkdir -p /etc/ccache && \
