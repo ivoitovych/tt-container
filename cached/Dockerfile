@@ -142,11 +142,31 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
+# Merge PR #36282 (Sexton's venv relocatability fix)
+# Then apply POSIX sh compatibility fix for the relocatable activate script
+RUN --mount=type=ssh \
+    echo "=== Merging PR #36282 (venv relocatability by nsextonTT) ===" && \
+    git fetch origin pull/36282/head:pr-36282 && \
+    git merge pr-36282 -m "Merge PR #36282 for verification" && \
+    echo "=== Applying POSIX sh fix from myfork ===" && \
+    git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/fix-pr-36282-relocatable-venv-posix-shell-compat:posix-fix && \
+    git cherry-pick posix-fix && \
+    echo "=== Both patches applied ==="
+
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
 # Create Python virtual environment for tt-metal
 RUN ./create_venv.sh
+
+# Verify uv is available after venv activation under POSIX sh (tests the fix)
+# This uses default /bin/sh - no bash required
+RUN echo "=== Verifying uv availability under POSIX sh ===" && \
+    . $TT_METAL_HOME/python_env/bin/activate && \
+    echo "PATH=$PATH" && \
+    which uv && \
+    uv --version && \
+    echo "=== uv verification PASSED ==="
 
 # Setup ccache configuration
 RUN mkdir -p /etc/ccache && \
