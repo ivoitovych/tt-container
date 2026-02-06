@@ -184,25 +184,26 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Initial ccache statistics:" && \
         ccache -z && \
         ccache -s && \
-        # Build tt-metal
-        . python_env/bin/activate && \
+        # Build tt-metal (use bash for relocatable venv activation)
         BUILD_TYPE_LOWER=$(echo ${BUILD_TYPE} | tr '[:upper:]' '[:lower:]') && \
-        ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
+        bash -c "source python_env/bin/activate && \
+            ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
+            deactivate" && \
         # Show ccache results
         echo "Final ccache statistics:" && \
-        ccache -s && \
-        deactivate; \
+        ccache -s; \
     else \
         echo "Skipping tt-metal build (BUILD_TTMETAL=false)"; \
     fi
 
 # Install ttml Python module (editable for development)
 # Note: create_venv.sh installs uv, so we use uv pip instead of pip
+# NOTE: Must use bash because relocatable venv's activate uses $BASH_SOURCE
 RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Installing ttml Python module..." && \
-        . $TT_METAL_HOME/python_env/bin/activate && \
-        uv pip install -e $TT_METAL_HOME/tt-train && \
-        deactivate; \
+        bash -c 'source $TT_METAL_HOME/python_env/bin/activate && \
+            uv pip install -e $TT_METAL_HOME/tt-train && \
+            deactivate'; \
     else \
         echo "Skipping ttml installation (BUILD_TTMETAL=false)"; \
     fi
