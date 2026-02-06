@@ -158,12 +158,14 @@ RUN ./create_venv.sh
 
 # Verify uv is available after venv activation (tests PR #36282 fix)
 # This runs in a fresh RUN step to simulate a new shell context
-RUN echo "=== Verifying uv availability (PR #36282 test) ===" && \
-    . $TT_METAL_HOME/python_env/bin/activate && \
+# NOTE: Must use bash (not sh) because relocatable venv's activate uses $BASH_SOURCE
+RUN bash -c '\
+    echo "=== Verifying uv availability (PR #36282 test) ===" && \
+    source $TT_METAL_HOME/python_env/bin/activate && \
     echo "PATH=$PATH" && \
     which uv && \
     uv --version && \
-    echo "=== uv verification PASSED ==="
+    echo "=== uv verification PASSED ==="'
 
 # Setup ccache configuration
 RUN mkdir -p /etc/ccache && \
