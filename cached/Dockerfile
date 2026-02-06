@@ -142,11 +142,35 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
+# === BLOCKER FIX: PR #37160 (issue #37007) ===
+# uv is installed to ~/.local/bin/ by create_venv.sh but that path is not on
+# PATH after venv activation. PR #37160 symlinks uv into python_env/bin/.
+RUN --mount=type=ssh \
+    echo "=== Merging PR #37160 (uv venv symlink fix) ===" && \
+    git fetch origin pull/37160/head:pr-37160 && \
+    git merge pr-37160 -m "Merge PR #37160: symlink uv into venv for PATH availability"
+
+# === COMPILER FIX: PR #37166 (issue #36993) ===
+# Inherit compiler from tt-metal's CMakeCache.txt instead of hardcoding clang-20.
+# This is the fix we are verifying in this container build.
+RUN --mount=type=ssh \
+    echo "=== Merging compiler fix from myfork (PR #37166 revision) ===" && \
+    git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-fix-gcc-constexpr-lambda:compiler-fix && \
+    git cherry-pick compiler-fix && \
+    echo "=== Compiler fix applied ==="
+
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
 # Create Python virtual environment for tt-metal
 RUN ./create_venv.sh
+
+# Verify uv is available after venv activation (tests PR #37160 fix)
+RUN echo "=== Verifying uv availability ===" && \
+    . $TT_METAL_HOME/python_env/bin/activate && \
+    which uv && \
+    uv --version && \
+    echo "=== uv verification PASSED ==="
 
 # Setup ccache configuration
 RUN mkdir -p /etc/ccache && \
@@ -154,6 +178,7 @@ RUN mkdir -p /etc/ccache && \
     echo "max_size = 10G" >> /etc/ccache/ccache.conf
 
 # Build tt-metal with cache mount
+# This creates CMakeCache.txt with the compiler info that tt-train will inherit.
 WORKDIR $TT_METAL_HOME
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
@@ -177,21 +202,43 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Skipping tt-metal build (BUILD_TTMETAL=false)"; \
     fi
 
-# Install ttml Python module (editable for development)
-# Note: create_venv.sh installs uv, so we use uv pip instead of pip
+# Verify CMakeCache.txt exists and shows the compiler
+# This is the file that tt-train will read to inherit the compiler.
 RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
-        echo "Installing ttml Python module..." && \
+        echo "=== Verifying CMakeCache.txt compiler info ===" && \
+        for dir in build build_Debug build_Release; do \
+            if [ -f "$TT_METAL_HOME/${dir}/CMakeCache.txt" ]; then \
+                echo "Found: $TT_METAL_HOME/${dir}/CMakeCache.txt" && \
+                grep "^CMAKE_C_COMPILER:" "$TT_METAL_HOME/${dir}/CMakeCache.txt" && \
+                grep "^CMAKE_CXX_COMPILER:" "$TT_METAL_HOME/${dir}/CMakeCache.txt" && \
+                break; \
+            fi; \
+        done && \
+        echo "=== CMakeCache.txt verification PASSED ==="; \
+    fi
+
+# Install ttml Python module (editable for development)
+# KEY TEST: No CC/CXX env vars set — scikit-build-core will invoke cmake
+# in an isolated environment. The compiler must be inherited from tt-metal's
+# CMakeCache.txt via INHERIT_COMPILER_FROM_TT_METAL().
+RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
+        echo "=== Installing ttml (pip install -e) WITHOUT CC/CXX env vars ===" && \
+        echo "=== This tests CMakeCache.txt compiler inheritance via scikit-build-core ===" && \
         . $TT_METAL_HOME/python_env/bin/activate && \
         uv pip install -e $TT_METAL_HOME/tt-train && \
-        deactivate; \
+        deactivate && \
+        echo "=== ttml pip install PASSED ==="; \
     else \
         echo "Skipping ttml installation (BUILD_TTMETAL=false)"; \
     fi
 
 # Build tt-train C++ components with cache mount
+# KEY TEST: No CC/CXX env vars, no -DCMAKE_C_COMPILER — the compiler must
+# be inherited from tt-metal's CMakeCache.txt.
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
-        echo "Building tt-train with build type: ${BUILD_TYPE}" && \
+        echo "=== Building tt-train standalone WITHOUT CC/CXX env vars ===" && \
+        echo "=== This tests CMakeCache.txt compiler inheritance via cmake ===" && \
         export CCACHE_DIR=/ccache && \
         export PATH=/usr/lib/ccache:$PATH && \
         cd $TT_METAL_HOME/tt-train && \
@@ -201,7 +248,7 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
               -B build -GNinja && \
         cmake --build build --config ${BUILD_TYPE} --clean-first && \
-        echo "tt-train build completed"; \
+        echo "=== tt-train standalone build PASSED ==="; \
     else \
         echo "Skipping tt-train build (BUILD_TTMETAL=false)"; \
     fi
@@ -239,4 +286,3 @@ exec "$@"' > /entrypoint.sh && \
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/bin/bash"]
-
