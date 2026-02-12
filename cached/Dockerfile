@@ -144,14 +144,15 @@ RUN --mount=type=ssh \
 
 # Merge PR #36282 (nsexton/0-portable-venv) for venv relocatability testing
 # Using merge (not cherry-pick) because the branch has many commits and is actively developed
+# POSIX sh fix (epam-iaroslav-voitovych's patch) was incorporated by nsextonTT on 2026-02-12
+# Cache-bust: update this date when the branch is updated → 2026-02-12
 RUN --mount=type=ssh \
     set -e && \
     echo "Merging nsexton/0-portable-venv (PR #36282) on top of main..." && \
     git fetch origin nsexton/0-portable-venv && \
     git merge --no-edit origin/nsexton/0-portable-venv && \
     echo "Merge successful. HEAD is now at $(git rev-parse --short HEAD)" && \
-    echo "Merge commit message:" && \
-    git log --oneline -1
+    git log --oneline -3
 
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
