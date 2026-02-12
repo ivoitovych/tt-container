@@ -142,6 +142,17 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
+# Merge PR #36282 (nsexton/0-portable-venv) for venv relocatability testing
+# Using merge (not cherry-pick) because the branch has many commits and is actively developed
+RUN --mount=type=ssh \
+    set -e && \
+    echo "Merging nsexton/0-portable-venv (PR #36282) on top of main..." && \
+    git fetch origin nsexton/0-portable-venv && \
+    git merge --no-edit origin/nsexton/0-portable-venv && \
+    echo "Merge successful. HEAD is now at $(git rev-parse --short HEAD)" && \
+    echo "Merge commit message:" && \
+    git log --oneline -1
+
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
