@@ -155,8 +155,8 @@ RUN --mount=type=ssh \
 # Using squashed v2 branch (single clean commit).
 RUN --mount=type=ssh \
     echo "=== Merging compiler fix from myfork (PR #37166 v2 squashed) ===" && \
-    git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-fix-gcc-constexpr-lambda-v2:compiler-fix && \
-    git merge compiler-fix -m "Merge PR #37166 v2: compiler inheritance from CMakeCache.txt" && \
+    git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-verify-adjust-warnings-dead-code:compiler-fix && \
+    git merge compiler-fix -m "Merge: verify ADJUST_COMPILER_WARNINGS is dead code" && \
     echo "=== Compiler fix applied ==="
 
 # Install tt-metal dependencies
