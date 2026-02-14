@@ -45,11 +45,11 @@ These 10 packages are the only ones installed before `install_dependencies.sh` r
 | `curl` | Used by install_dependencies.sh for Kitware GPG key download | **Redundant** — same situation as wget. Needed during repo setup before main package install. Keep for safety. |
 | `ca-certificates` | Required for HTTPS downloads (git clone, wget, curl) | **Redundant** — install_dependencies.sh installs it during system prep. But without it, the initial `git clone` over SSH/HTTPS would fail. **Must keep.** |
 | `git` | Clone tt-metal repo before install_dependencies.sh runs | **Redundant** — install_dependencies.sh installs git. But we need it *before* the script exists (to clone the repo). **Must keep.** |
-| `git-lfs` | Pull LFS objects from tt-metal repo | **Not installed** by install_dependencies.sh. **Must keep.** |
-| `openssh-client` | SSH-based git clone from GitHub | **Not installed** by install_dependencies.sh. **Must keep.** |
-| `ccache` | Compiler cache for faster rebuilds | **Not installed** by install_dependencies.sh. **Must keep** (or add to install_dependencies.sh). |
-| `kmod` | `modprobe` for kernel module management at runtime | **Not installed** by install_dependencies.sh. **Must keep** for runtime device access. |
-| `pciutils` | `lspci` for hardware detection at runtime | **Not installed** by install_dependencies.sh. **Must keep** for runtime diagnostics. |
+| `git-lfs` | Pull LFS objects from tt-metal repo | Pre-build dependency — must be available before install_dependencies.sh runs. **Must keep.** |
+| `openssh-client` | SSH-based git clone from GitHub | **Optional** — tt-metal is open source, HTTPS clone works without it. Needed only for SSH-based clone workflow. |
+| `ccache` | Compiler cache for faster rebuilds | **Optional** — build acceleration only. Counterproductive for smallest images and clean builds. |
+| `kmod` | `modprobe` for kernel module management at runtime | **Runtime only** — not needed for build. Useful for device interaction in development containers. |
+| `pciutils` | `lspci` for hardware detection at runtime | **Runtime only** — not needed for build. Useful for hardware diagnostics in development containers. |
 
 ## Analysis of Bootstrap Packages
 
@@ -67,51 +67,32 @@ can run, or because install_dependencies.sh doesn't install them:
 | `openssh-client` | SSH-based git clone (not in install_dependencies.sh) |
 | `wget` | Used by install_dependencies.sh during repo setup, before package install |
 
-### Could potentially be removed: 1 package
+### Optional (could be removed for minimal images): 4 packages
 
-| Package | Notes |
-|---------|-------|
-| `curl` | install_dependencies.sh installs curl, but also uses it during system prep (Kitware GPG key). If the prep step is rearranged to install curl first, this could be removed. Low priority — 200 KB. |
+| Package | Category | Notes |
+|---------|----------|-------|
+| `curl` | Redundant | install_dependencies.sh installs curl, but also uses it during system prep (Kitware GPG key fetch). If the prep step ordering changes, removal could break. Low priority — ~200 KB. |
+| `openssh-client` | Workflow | Only needed for SSH-based git clone. tt-metal is open source — HTTPS clone works without it. |
+| `ccache` | Build acceleration | Not needed for correctness. Counterproductive for smallest images and clean reproducible builds. |
+| `kmod` | Runtime | Only needed for `modprobe tenstorrent` at container runtime. Not a build dependency. |
+| `pciutils` | Runtime | Only needed for `lspci` at container runtime. Not a build dependency. |
 
-### Runtime-only (not needed for build, needed for device interaction): 2 packages
+## Packages Not in install_dependencies.sh (By Design)
 
-| Package | Notes |
-|---------|-------|
-| `kmod` | Only needed at container runtime for `modprobe tenstorrent`. Could be installed after the build, but is tiny (~100 KB) and useful during development. |
-| `pciutils` | Only needed at runtime for `lspci`. Same consideration as kmod. |
+These packages are not in `install_dependencies.sh` and **should not be added**
+— they are outside its scope:
 
-### Build acceleration (optional): 1 package
+| Package | Category | Rationale |
+|---------|----------|-----------|
+| `git-lfs` | Pre-build dependency | Must be installed *before* `install_dependencies.sh` runs — the repo clone and LFS pull happen first. Not a build dependency, it's a source checkout dependency. |
+| `openssh-client` / `openssh-clients` | Optional | tt-metal is open source. HTTPS clone works without SSH. Only needed if cloning via SSH (private forks, faster auth). |
+| `ccache` | Optional | Build acceleration only. Counterproductive for smallest images and clean reproducible builds. A container/CI concern, not a build dependency. |
+| `kmod` | Runtime only | Kernel module tools (`modprobe`, `lsmod`). Not needed for building — only for loading the tenstorrent driver at runtime. |
+| `pciutils` | Runtime only | PCI utilities (`lspci`). Not needed for building — only for hardware detection and diagnostics at runtime. |
 
-| Package | Notes |
-|---------|-------|
-| `ccache` | Not needed for correctness — only for build speed. Could be removed if ccache is not desired. In practice, always wanted. |
-
-## Packages install_dependencies.sh Should Install But Doesn't
-
-These packages are commonly needed for tt-metal development and container usage
-but are missing from `install_dependencies.sh`:
-
-| Package | Purpose | Impact if missing |
-|---------|---------|-------------------|
-| `git-lfs` | Git Large File Storage — tt-metal uses LFS for binary assets | LFS pull fails; missing model weights, test data |
-| `openssh-client` / `openssh-clients` | SSH client for GitHub access | Cannot clone private repos via SSH |
-| `ccache` | Compiler cache | No build acceleration; every build is from scratch |
-| `kmod` | Kernel module tools (`modprobe`, `lsmod`) | Cannot load/manage tenstorrent kernel driver |
-| `pciutils` | PCI utilities (`lspci`) | Cannot detect/diagnose Tenstorrent hardware |
-
-**Recommendation:** These 5 packages should be added to `install_dependencies.sh`
-to make it truly self-sufficient for both development and deployment. They are
-small, universally available across apt/dnf/yum, and have no license concerns.
-
-### Package names across distributions
-
-| Purpose | apt (Debian/Ubuntu) | dnf (Fedora/Rocky/Alma/CentOS) |
-|---------|---------------------|-------------------------------|
-| Git LFS | `git-lfs` | `git-lfs` |
-| SSH client | `openssh-client` | `openssh-clients` |
-| Compiler cache | `ccache` | `ccache` |
-| Kernel modules | `kmod` | `kmod` |
-| PCI utilities | `pciutils` | `pciutils` |
+**Conclusion:** `install_dependencies.sh` correctly focuses on *build* dependencies.
+The packages above belong in the Dockerfile or host system setup, not in the
+build dependency installer.
 
 ## Warning in install_dependencies.sh
 
@@ -147,14 +128,20 @@ and dependencies.
 ## Conclusion
 
 `install_dependencies.sh` is fully self-sufficient for building tt-metal on
-Ubuntu 22.04. The Dockerfile only needs to pre-install packages that are required
-*before* the script runs (git, sudo, ca-certificates, wget) or that the script
-doesn't cover (git-lfs, openssh-client, ccache, kmod, pciutils).
+Ubuntu 22.04. It correctly handles all build dependencies: cmake (from Kitware
+repo), clang-20 (via llvm.sh), build-essential, g++-12, ninja, and all required
+libraries.
 
-The current 10-package bootstrap is already minimal. At most, `curl` could be
-removed (saving ~200 KB), but it's not worth the risk of breakage if
-install_dependencies.sh's internal ordering changes.
+The Dockerfile bootstrap splits cleanly into three categories:
 
-Adding 5 packages (git-lfs, openssh-client/clients, ccache, kmod, pciutils) to
-`install_dependencies.sh` would make it truly self-contained for container and
-bare-metal development environments alike.
+1. **Pre-build essentials** (cannot remove): `sudo`, `git`, `git-lfs`,
+   `ca-certificates`, `wget` — needed before install_dependencies.sh runs.
+2. **Optional for workflow**: `openssh-client` (SSH clone), `curl` (redundant
+   with wget but used by install_dependencies.sh during repo setup), `ccache`
+   (build acceleration).
+3. **Runtime only**: `kmod`, `pciutils` — not needed for build, only for
+   device interaction.
+
+The current 10-package bootstrap is already minimal and well-justified.
+`install_dependencies.sh` does not need changes — the missing packages are
+outside its scope by design.
