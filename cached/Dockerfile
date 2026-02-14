@@ -19,8 +19,11 @@ ENV TT_METAL_HOME=/workspace/tt-metal
 ENV TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME
 ENV PYTHONPATH=$TT_METAL_HOME
 
-# Bootstrap packages — only what's needed to clone repos and run install_dependencies.sh.
-# Detects package manager (apt vs dnf) and installs the minimal set.
+# Bootstrap packages — minimal set not provided by install_dependencies.sh.
+# Required:  sudo, wget, ca-certificates, git, git-lfs (needed before install_dependencies.sh)
+# Optional:  curl (redundant but used during repo setup), openssh-client (SSH clone),
+#            ccache (build acceleration), kmod/pciutils (runtime device interaction)
+# Detects package manager (apt vs dnf vs yum) and installs accordingly.
 RUN if command -v apt-get >/dev/null 2>&1; then \
         apt-get update && apt-get install -y --no-install-recommends \
             sudo wget curl ca-certificates \
@@ -60,9 +63,11 @@ RUN mkdir -p /root/.ssh && \
     chmod 600 /root/.ssh/config
 
 # Configure .bashrc for environment variables and history
+# Remove existing HISTSIZE/HISTFILESIZE (some base images set these)
 RUN echo "export TT_METAL_HOME=$TT_METAL_HOME" >> /root/.bashrc && \
     echo 'export TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME' >> /root/.bashrc && \
     echo 'export PYTHONPATH=$TT_METAL_HOME' >> /root/.bashrc && \
+    sed -i '/^HISTSIZE=/d; /^HISTFILESIZE=/d' /root/.bashrc && \
     echo 'HISTSIZE=-1' >> /root/.bashrc && \
     echo 'HISTFILESIZE=-1' >> /root/.bashrc
 
@@ -109,8 +114,8 @@ RUN --mount=type=ssh \
     git submodule foreach --recursive 'git lfs pull'
 
 # Merge patches for known build issues:
-# 1. uv symlink into venv (PR #37160 / issue #37007)
-# 2. tt-train compiler selection (PR #37166 / issue #36993)
+# 1. uv symlink into venv (PR #37160 / issue #37007) — uv not on PATH after activation
+# 2. tt-train compiler selection (PR #37166 / issue #36993) — scikit-build-core picks GCC
 # Cache-bust: 2026-02-13
 RUN --mount=type=ssh \
     set -e && \
