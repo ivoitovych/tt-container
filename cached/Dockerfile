@@ -150,13 +150,13 @@ RUN --mount=type=ssh \
     git fetch origin pull/37160/head:pr-37160 && \
     git merge pr-37160 -m "Merge PR #37160: symlink uv into venv for PATH availability"
 
-# === COMPILER FIX: PR #37166 (issue #36993) ===
+# === COMPILER FIX: PR #37166 v6 (issue #36993) ===
 # Inherit compiler from tt-metal's CMakeCache.txt instead of hardcoding clang-20.
-# Using squashed v2 branch (single clean commit).
+# v6: symmetric Clang 17+/GCC 12+ validation, TT_TRAIN_INHERIT_COMPILER option.
 RUN --mount=type=ssh \
-    echo "=== Merging compiler fix from myfork (PR #37166 v2 squashed) ===" && \
-    git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-verify-adjust-warnings-dead-code:compiler-fix && \
-    git merge compiler-fix -m "Merge: verify ADJUST_COMPILER_WARNINGS is dead code" && \
+    echo "=== Merging compiler fix v6 (PR #37166) ===" && \
+    git fetch origin ivoitovych/issue-36993-fix-gcc-constexpr-lambda-v6:compiler-fix && \
+    git merge compiler-fix -m "Merge: PR #37166 v6 compiler selection fix" && \
     echo "=== Compiler fix applied ==="
 
 # Install tt-metal dependencies
