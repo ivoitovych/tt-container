@@ -116,7 +116,8 @@ RUN --mount=type=ssh \
 # Merge patches for known build issues:
 # 1. uv symlink into venv (PR #37160 / issue #37007) — uv not on PATH after activation
 # 2. tt-train compiler selection (PR #37166 / issue #36993) — scikit-build-core picks GCC
-# Cache-bust: 2026-02-13
+# 3. build_metal.sh `which` portability (issue #37904) — `which` not found on Fedora/RHEL
+# Cache-bust: 2026-02-14
 RUN --mount=type=ssh \
     set -e && \
     echo "Merging uv-symlink fix (issue #37007)..." && \
@@ -124,6 +125,9 @@ RUN --mount=type=ssh \
     git merge --no-edit FETCH_HEAD && \
     echo "Merging tt-train compiler selection fix (issue #36993)..." && \
     git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-fix-gcc-constexpr-lambda-v2 && \
+    git merge --no-edit FETCH_HEAD && \
+    echo "Merging build_metal.sh which portability fix (issue #37904)..." && \
+    git fetch origin ivoitovych/issue-37904-fix-build-metal-which-portability && \
     git merge --no-edit FETCH_HEAD && \
     echo "Patches merged. HEAD is now at $(git rev-parse --short HEAD)" && \
     git log --oneline -5
