@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1.4
-# Use Ubuntu 22.04 as base (matching your environment)
+# Minimal Dockerfile — test if install_dependencies.sh is self-sufficient.
+# Only pre-install packages that install_dependencies.sh cannot provide:
+#   sudo, git, git-lfs, openssh-client, wget, curl (bootstrap dependencies)
+#   ccache, kmod, pciutils (not in install_dependencies.sh package list)
 FROM ubuntu:22.04
 
 # Build arguments
@@ -14,52 +17,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TT_METAL_HOME=/workspace/tt-metal
 ENV TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME
 ENV PYTHONPATH=$TT_METAL_HOME
-# ARCH_NAME removed - hardware is now auto-detected
-ENV PATH=/opt/cmake/bin:$PATH
 
-RUN apt-get update && apt-get install -y \
-    # Basic tools
+# Minimal bootstrap packages — only what install_dependencies.sh needs to run
+RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     wget \
     curl \
+    ca-certificates \
     git \
     git-lfs \
-    vim \
-    nano \
     openssh-client \
-    # Build tools
-    build-essential \
-    dkms \
     ccache \
-    ninja-build \
-    pkg-config \
-    clang \
-    llvm \
-    # Python
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
-    python3-numpy \
-    # Libraries
-    libstdc++-12-dev \
-    libmpfr-dev \
-    libgmp-dev \
-    libmpc-dev \
-    libnuma-dev \
-    libhwloc-dev \
-    libtbb-dev \
-    libcapstone-dev \
-    # MPI support
-    libopenmpi-dev \
-    openmpi-bin \
-    # Additional tools
-    cargo \
-    pandoc \
-    graphviz \
-    doxygen \
-    texlive-latex-base \
-    # System tools
     kmod \
     pciutils \
     && rm -rf /var/lib/apt/lists/*
@@ -68,12 +36,6 @@ RUN apt-get update && apt-get install -y \
 RUN echo "tries = 5" >> /etc/wgetrc && \
     echo "waitretry = 10" >> /etc/wgetrc && \
     echo "retry_connrefused = on" >> /etc/wgetrc
-
-# Install CMake 3.30.9 from source (required for tt-train)
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.30.9/cmake-3.30.9-linux-x86_64.tar.gz && \
-    tar -xzf cmake-3.30.9-linux-x86_64.tar.gz && \
-    mv cmake-3.30.9-linux-x86_64 /opt/cmake && \
-    rm cmake-3.30.9-linux-x86_64.tar.gz
 
 # Configure git and git-lfs
 RUN git config --global user.email "docker@tt-metal.local" && \
@@ -118,7 +80,6 @@ RUN --mount=type=ssh \
     ACTUAL_HASH=$(git rev-parse HEAD) && \
     echo "Checked out commit: ${ACTUAL_HASH}" && \
     echo "Expected commit:    ${EXPECTED_COMMIT_HASH}" && \
-    # Handle short hashes - check if actual hash starts with expected hash \
     case "${ACTUAL_HASH}" in \
         "${EXPECTED_COMMIT_HASH}"*) \
             echo "Commit hash verified successfully!" ;; \
@@ -129,12 +90,6 @@ RUN --mount=type=ssh \
             echo "Expected: ${EXPECTED_COMMIT_HASH}" && \
             echo "Got:      ${ACTUAL_HASH}" && \
             echo "" && \
-            echo "This can happen if:" && \
-            echo "  - New commits were pushed to ${CHECKOUT_REF} during build" && \
-            echo "  - Network delay between hash fetch and checkout" && \
-            echo "" && \
-            echo "Solution: Run the build script again to use the new commit hash." && \
-            echo "" && \
             exit 1 ;; \
     esac && \
     git submodule sync --recursive && \
@@ -142,8 +97,23 @@ RUN --mount=type=ssh \
     git lfs pull && \
     git submodule foreach --recursive 'git lfs pull'
 
-# Install tt-metal dependencies
-RUN ./install_dependencies.sh || true
+# Merge patches for known build issues:
+# 1. uv symlink into venv (PR #37160 / issue #37007) — uv not on PATH after activation
+# 2. tt-train compiler selection (PR #37166 / issue #36993) — scikit-build-core picks GCC
+# Cache-bust: 2026-02-13
+RUN --mount=type=ssh \
+    set -e && \
+    echo "Merging uv-symlink fix (issue #37007)..." && \
+    git fetch origin ivoitovych/issue-37007-fix-uv-path-venv-symlink && \
+    git merge --no-edit FETCH_HEAD && \
+    echo "Merging tt-train compiler selection fix (issue #36993)..." && \
+    git fetch https://github.com/ivoitovych/tt-metal.git ivoitovych/issue-36993-fix-gcc-constexpr-lambda-v2 && \
+    git merge --no-edit FETCH_HEAD && \
+    echo "Patches merged. HEAD is now at $(git rev-parse --short HEAD)" && \
+    git log --oneline -5
+
+# Let install_dependencies.sh handle everything: cmake, clang, build tools, libraries
+RUN ./install_dependencies.sh
 
 # Create Python virtual environment for tt-metal
 RUN ./create_venv.sh
@@ -160,16 +130,13 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Building tt-metal with build type: ${BUILD_TYPE}" && \
         export CCACHE_DIR=/ccache && \
         export PATH=/usr/lib/ccache:$PATH && \
-        # Configure ccache
         ccache -M 10G && \
         echo "Initial ccache statistics:" && \
         ccache -z && \
         ccache -s && \
-        # Build tt-metal
         . python_env/bin/activate && \
         BUILD_TYPE_LOWER=$(echo ${BUILD_TYPE} | tr '[:upper:]' '[:lower:]') && \
         ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
-        # Show ccache results
         echo "Final ccache statistics:" && \
         ccache -s && \
         deactivate; \
@@ -178,7 +145,6 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     fi
 
 # Install ttml Python module (editable for development)
-# Note: create_venv.sh installs uv, so we use uv pip instead of pip
 RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Installing ttml Python module..." && \
         . $TT_METAL_HOME/python_env/bin/activate && \
@@ -239,4 +205,3 @@ exec "$@"' > /entrypoint.sh && \
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/bin/bash"]
-
