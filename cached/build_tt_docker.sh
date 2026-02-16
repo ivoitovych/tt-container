@@ -150,7 +150,9 @@ IMAGE_REPO="${IMAGE_REPO}-${COMMIT_HASH_SHORT}"
 if [ ${#MERGE_BRANCHES[@]} -gt 0 ]; then
     MERGE_LABEL="${MERGE_BRANCHES[0]##*/}"  # last path component
     MERGE_LABEL="${MERGE_LABEL##*:}"        # after : for fork syntax
-    IMAGE_REPO="${IMAGE_REPO}-merge-${MERGE_LABEL:0:20}"
+    MERGE_LABEL="${MERGE_LABEL:0:20}"
+    MERGE_LABEL="${MERGE_LABEL%-}"  # strip trailing dash from truncation
+    IMAGE_REPO="${IMAGE_REPO}-merge-${MERGE_LABEL}"
 fi
 
 # Append tt-train compiler override to image name
