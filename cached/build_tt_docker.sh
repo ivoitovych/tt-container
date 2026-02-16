@@ -9,7 +9,8 @@ SSH_KEY_PATH="${HOME}/.ssh"
 TT_METAL_BRANCH="main"
 COMMIT_HASH=""  # Will be fetched from GitHub
 FORCE_BUILD=false
-TT_TRAIN_COMPILER="none"  # Override tt-train compiler: none, clang-17, gcc-12
+TT_TRAIN_COMPILER="none"  # Override tt-train compiler: none, clang-N, gcc-N
+MERGE_BRANCHES=()  # Additional branches to merge after checkout
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -53,6 +54,10 @@ while [[ $# -gt 0 ]]; do
             TT_TRAIN_COMPILER="$2"
             shift 2
             ;;
+        --merge-branch)
+            MERGE_BRANCHES+=("$2")
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
@@ -65,11 +70,18 @@ while [[ $# -gt 0 ]]; do
             echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache-docker]"
             echo "  --ssh-key PATH      Path to SSH keys directory [default: ~/.ssh]"
             echo "  --force             Force rebuild even if image exists"
-            echo "  --tt-train-compiler COMPILER  Override tt-train compiler: none, clang-17, gcc-12 [default: none]"
+            echo "  --tt-train-compiler COMPILER  Override tt-train compiler: none, clang-N, gcc-N [default: none]"
+            echo "  --merge-branch BRANCH         Merge branch after checkout (repeatable). Use user/repo:branch for forks"
             echo "  -h, --help          Show this help message"
             echo ""
             echo "Default: Builds tt-metal in Debug mode from main branch"
             echo "Image name will include commit hash: <user>-tt-metal-env-built-<type>-<hash>:latest"
+            echo ""
+            echo "Examples:"
+            echo "  $0 --branch main                                          # Build from main"
+            echo "  $0 --branch main --merge-branch user/feature-branch       # Build main + merge a branch"
+            echo "  $0 --branch main --tt-train-compiler clang-17             # Build with clang-17 for tt-train"
+            echo "  $0 --branch main --merge-branch pr-branch --merge-branch fix-branch  # Merge multiple"
             exit 0
             ;;
         *)
@@ -134,6 +146,13 @@ fi
 # Always append commit hash to repository name
 IMAGE_REPO="${IMAGE_REPO}-${COMMIT_HASH_SHORT}"
 
+# Append merge branch info to image name (use last component of first branch)
+if [ ${#MERGE_BRANCHES[@]} -gt 0 ]; then
+    MERGE_LABEL="${MERGE_BRANCHES[0]##*/}"  # last path component
+    MERGE_LABEL="${MERGE_LABEL##*:}"        # after : for fork syntax
+    IMAGE_REPO="${IMAGE_REPO}-merge-${MERGE_LABEL:0:20}"
+fi
+
 # Append tt-train compiler override to image name
 if [ "$TT_TRAIN_COMPILER" != "none" ]; then
     IMAGE_REPO="${IMAGE_REPO}-tttrain-${TT_TRAIN_COMPILER}"
@@ -154,6 +173,7 @@ echo "  BUILD_TYPE: $BUILD_TYPE"
 echo "  TT_METAL_BRANCH: $TT_METAL_BRANCH"
 echo "  COMMIT_HASH: $COMMIT_HASH_SHORT"
 echo "  TT_TRAIN_COMPILER: $TT_TRAIN_COMPILER"
+echo "  MERGE_BRANCHES: ${MERGE_BRANCHES[*]:-none}"
 echo "  SSH_KEY_PATH: $SSH_KEY_PATH"
 
 # Check if ANY image with this repository name already exists
@@ -247,6 +267,7 @@ docker build \
     --build-arg EXPECTED_COMMIT_HASH=$COMMIT_HASH \
     --build-arg REF_TYPE=$REF_TYPE \
     --build-arg TT_TRAIN_COMPILER=$TT_TRAIN_COMPILER \
+    --build-arg "MERGE_BRANCHES=${MERGE_BRANCHES[*]}" \
     -t "${FULL_IMAGE_NAME}" \
     -f Dockerfile \
     .
