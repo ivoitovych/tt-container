@@ -9,6 +9,7 @@ SSH_KEY_PATH="${HOME}/.ssh"
 TT_METAL_BRANCH="main"
 COMMIT_HASH=""  # Will be fetched from GitHub
 FORCE_BUILD=false
+TT_TRAIN_COMPILER="none"  # Override tt-train compiler: none, clang-17, gcc-12
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_BUILD=true
             shift
             ;;
+        --tt-train-compiler)
+            TT_TRAIN_COMPILER="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
@@ -60,6 +65,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache-docker]"
             echo "  --ssh-key PATH      Path to SSH keys directory [default: ~/.ssh]"
             echo "  --force             Force rebuild even if image exists"
+            echo "  --tt-train-compiler COMPILER  Override tt-train compiler: none, clang-17, gcc-12 [default: none]"
             echo "  -h, --help          Show this help message"
             echo ""
             echo "Default: Builds tt-metal in Debug mode from main branch"
@@ -128,6 +134,11 @@ fi
 # Always append commit hash to repository name
 IMAGE_REPO="${IMAGE_REPO}-${COMMIT_HASH_SHORT}"
 
+# Append tt-train compiler override to image name
+if [ "$TT_TRAIN_COMPILER" != "none" ]; then
+    IMAGE_REPO="${IMAGE_REPO}-tttrain-${TT_TRAIN_COMPILER}"
+fi
+
 if [ -n "$IMAGE_TAG_SUFFIX" ]; then
     IMAGE_REPO="${IMAGE_REPO}-${IMAGE_TAG_SUFFIX}"
 fi
@@ -142,6 +153,7 @@ echo "  BUILD_TTMETAL: $BUILD_TTMETAL"
 echo "  BUILD_TYPE: $BUILD_TYPE"
 echo "  TT_METAL_BRANCH: $TT_METAL_BRANCH"
 echo "  COMMIT_HASH: $COMMIT_HASH_SHORT"
+echo "  TT_TRAIN_COMPILER: $TT_TRAIN_COMPILER"
 echo "  SSH_KEY_PATH: $SSH_KEY_PATH"
 
 # Check if ANY image with this repository name already exists
@@ -234,6 +246,7 @@ docker build \
     --build-arg CHECKOUT_REF=$CHECKOUT_REF \
     --build-arg EXPECTED_COMMIT_HASH=$COMMIT_HASH \
     --build-arg REF_TYPE=$REF_TYPE \
+    --build-arg TT_TRAIN_COMPILER=$TT_TRAIN_COMPILER \
     -t "${FULL_IMAGE_NAME}" \
     -f Dockerfile \
     .

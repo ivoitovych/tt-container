@@ -8,6 +8,8 @@ ARG BUILD_TYPE=Debug
 ARG CHECKOUT_REF=main
 ARG EXPECTED_COMMIT_HASH=unknown
 ARG REF_TYPE=branch
+# tt-train compiler override: "none" (inherit from CMakeCache), "clang-17", "gcc-12", etc.
+ARG TT_TRAIN_COMPILER=none
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -145,6 +147,19 @@ RUN --mount=type=ssh \
 # Install tt-metal dependencies
 RUN ./install_dependencies.sh || true
 
+# Install override compiler for tt-train if requested
+# (tt-metal always builds with clang-20 from install_dependencies.sh)
+RUN if [ "$TT_TRAIN_COMPILER" = "clang-17" ]; then \
+        echo "=== Installing clang-17 for tt-train override test ===" && \
+        apt-get update && apt-get install -y clang-17 && rm -rf /var/lib/apt/lists/* && \
+        clang-17 --version && clang++-17 --version; \
+    elif [ "$TT_TRAIN_COMPILER" = "gcc-12" ]; then \
+        echo "=== gcc-12 already installed by install_dependencies.sh ===" && \
+        gcc-12 --version && g++-12 --version; \
+    elif [ "$TT_TRAIN_COMPILER" != "none" ]; then \
+        echo "ERROR: Unknown TT_TRAIN_COMPILER=$TT_TRAIN_COMPILER" && exit 1; \
+    fi
+
 # Create Python virtual environment for tt-metal
 RUN ./create_venv.sh
 
@@ -189,6 +204,7 @@ RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
     fi
 
 # Build tt-train C++ components with cache mount
+# When TT_TRAIN_COMPILER is set, override the compiler and disable inheritance
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Building tt-train with build type: ${BUILD_TYPE}" && \
@@ -196,9 +212,20 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         export PATH=/usr/lib/ccache:$PATH && \
         cd $TT_METAL_HOME/tt-train && \
         rm -rf build/ && \
+        CMAKE_EXTRA_ARGS="" && \
+        if [ "$TT_TRAIN_COMPILER" = "clang-17" ]; then \
+            CMAKE_EXTRA_ARGS="-DTT_TRAIN_INHERIT_COMPILER=OFF -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17" && \
+            echo "=== OVERRIDE: building tt-train with clang-17 ==="; \
+        elif [ "$TT_TRAIN_COMPILER" = "gcc-12" ]; then \
+            CMAKE_EXTRA_ARGS="-DTT_TRAIN_INHERIT_COMPILER=OFF -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12" && \
+            echo "=== OVERRIDE: building tt-train with gcc-12 ==="; \
+        else \
+            echo "=== DEFAULT: tt-train inherits compiler from tt-metal CMakeCache.txt ==="; \
+        fi && \
         cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              $CMAKE_EXTRA_ARGS \
               -B build -GNinja && \
         cmake --build build --config ${BUILD_TYPE} --clean-first && \
         echo "tt-train build completed"; \
