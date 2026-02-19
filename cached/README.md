@@ -93,6 +93,8 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 - `--force`: Force rebuild even if image for this commit already exists.
 - `--ccache-dir DIR`: Host ccache directory. Default: `~/.cache/ccache-docker`.
 - `--ssh-key PATH`: Path to SSH keys directory. Default: `~/.ssh`.
+- `--tt-train-compiler COMPILER`: Override compiler for tt-train build: `none` (inherit from tt-metal), `clang-N`, or `gcc-N`. Default: `none`.
+- `--merge-branch BRANCH`: Merge an additional branch after checkout (repeatable). Use `user/repo:branch` syntax for fork branches.
 - `-h` or `--help`: Show help message.
 
 ### Examples
@@ -125,6 +127,25 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
   ```bash
   ./build_tt_docker.sh --force
   # Replaces the 'latest' tag of existing image for this commit
+  ```
+
+- Merge additional branches (e.g., for testing a PR on top of main):
+  ```bash
+  ./build_tt_docker.sh --branch main --merge-branch user/feature-branch
+  # Creates: <user>-tt-metal-env-built-debug-eca8b5a8f1-merge-feature-branch:latest
+  ```
+
+- Build with a specific compiler for tt-train:
+  ```bash
+  ./build_tt_docker.sh --branch main --tt-train-compiler clang-17
+  # Creates: <user>-tt-metal-env-built-debug-eca8b5a8f1-tttrain-clang-17:latest
+  ```
+
+- Merge multiple branches with compiler override:
+  ```bash
+  ./build_tt_docker.sh --branch main \
+    --merge-branch pr-branch --merge-branch fix-branch \
+    --tt-train-compiler gcc-12
   ```
 
 - Advanced configuration:
@@ -212,22 +233,24 @@ The `latest` tag is your fresh build, and `backup-YYYY-MM-DD-N` tags are your sa
 The Dockerfile:
 - Uses Ubuntu 22.04 as base.
 - Installs dependencies (build tools, Python, libraries like libnuma-dev, cargo).
+- Installs CMake 3.30.9 (required for tt-train).
 - Clones Tenstorrent repos (`tt-system-tools`, `tt-smi`, `tt-metal`) via SSH.
+- Checks out the specified branch/tag/commit and verifies the commit hash.
+- Merges additional branches if specified (supports fork syntax).
 - Optionally builds tt-metal with ccache.
+- Installs `ttml` Python package (editable mode) and builds tt-train C++ components.
+- Optionally overrides the compiler for the tt-train build.
 - Installs tt-smi.
 - Sets up an entrypoint for venv activation, ccache, and SSH setup.
 
 ### Build Arguments
-- `BUILD_TTMETAL` (true/false): Build tt-metal? Default: true.
-- `BUILD_TYPE` (Debug/Release): Build type. Default: Debug.
-- `TT_METAL_BRANCH` (branch/commit): tt-metal version. Default: main.
-
-### Build Arguments
-- `BUILD_TTMETAL` (true/false): Build tt-metal? Default: true.
-- `BUILD_TYPE` (Debug/Release): Build type. Default: Debug.
-- `CHECKOUT_REF` (branch/tag/commit): What to checkout in the container. Default: main.
+- `BUILD_TTMETAL` (true/false): Build tt-metal? Default: `true`.
+- `BUILD_TYPE` (Debug/Release): Build type. Default: `Debug`.
+- `CHECKOUT_REF` (branch/tag/commit): What to checkout in the container. Default: `main`.
 - `EXPECTED_COMMIT_HASH`: The commit hash that should result from the checkout (for verification).
 - `REF_TYPE` (branch/tag/commit): Type of reference being checked out.
+- `TT_TRAIN_COMPILER` (none/clang-N/gcc-N): Override compiler for tt-train build. Default: `none` (inherit from tt-metal's CMakeCache.txt).
+- `MERGE_BRANCHES` (space-separated list): Additional branches to merge after checkout. Supports fork syntax (`user/repo:branch`). Default: empty.
 
 **Note:** The build script automatically sets these values. `CHECKOUT_REF` preserves branch/tag names to maintain tracking, while `EXPECTED_COMMIT_HASH` ensures the checkout results in the correct commit.
 
@@ -246,26 +269,31 @@ The Dockerfile:
 ### Directory Structure
 ```
 /workspace/
-├── tt-metal/          # Main tt-metal repository
-│   └── python_env/    # Python virtual environment (auto-activated)
-├── tt-smi/            # SMI tools repository
-├── tt-system-tools/   # System utilities repository
-└── user/              # Your mounted workspace (if --mount-workspace used)
+├── tt-metal/              # Main tt-metal repository
+│   ├── python_env/        # Python virtual environment (auto-activated)
+│   ├── build_Debug/       # tt-metal Debug build (if built)
+│   │   └── tt-train/      # tt-train integrated build
+│   └── tt-train/          # tt-train source
+│       └── build/         # tt-train standalone build (with compiler override)
+├── tt-smi/                # SMI tools repository
+├── tt-system-tools/       # System utilities repository
+└── user/                  # Your mounted workspace (if --mount-workspace used)
 ```
 
 ### Environment Variables
 Automatically configured:
 - `TT_METAL_HOME=/workspace/tt-metal`
 - `PYTHONPATH=/workspace/tt-metal`
-- `ARCH_NAME=wormhole_b0`
 - `CCACHE_DIR=/ccache`
+- Hardware architecture is auto-detected at runtime (no `ARCH_NAME` needed).
 - Python virtual environment activated on startup.
 
 ### Hardware Access
-- Privileged mode for full hardware access.
-- Device passthrough for `/dev/tenstorrent`.
-- Kernel module access via host `/lib/modules`.
+- Privileged mode with `--cap-add=ALL` and AppArmor unconfined for full hardware access.
+- Device passthrough for `/dev/tenstorrent`, plus `/dev`, `/sys`, and `/lib/modules` (read-only).
 - Huge pages mounted for performance.
+- Host `/opt/tt-kmd` and `/opt/tt-flash` mounted read-only (if present).
+- X11 forwarding enabled (`DISPLAY` and `/tmp/.X11-unix`).
 
 ## Common Workflows
 
@@ -377,8 +405,10 @@ ccache -z
 
 ## Image Tags
 
-Images are named with the pattern `<user>-tt-metal-env-<type>-<commit-hash>:<tag>`:
+Images are named with the pattern `<user>-tt-metal-env-<type>-<commit-hash>[-merge-<branch>][-tttrain-<compiler>][-<suffix>]:<tag>`:
 - Repository includes commit hash: `<user>-tt-metal-env-built-debug-eca8b5a8f1`
+- Optional merge label: appended when `--merge-branch` is used (last path component, truncated to 20 chars)
+- Optional compiler label: appended when `--tt-train-compiler` is used
 - `latest` tag: Fresh build from Dockerfile
 - `backup-YYYY-MM-DD-N` tags: Saved container states via `docker commit`
 
@@ -386,6 +416,8 @@ Examples:
 - `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:latest` - Fresh Debug build
 - `ivoitovych-tt-metal-env-built-release-eca8b5a8f1:latest` - Fresh Release build
 - `ivoitovych-tt-metal-env-base-eca8b5a8f1:latest` - Base image without pre-built tt-metal
+- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1-merge-feature-branch:latest` - With merged branch
+- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1-tttrain-gcc-12:latest` - With tt-train compiler override
 - `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1` - Saved container state
 
 View all available images:
