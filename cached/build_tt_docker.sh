@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# OS platform presets
+# Main:         ubuntu:22.04, ubuntu:24.04, fedora:40
+# Experimental: debian:12, rockylinux:9, almalinux:9, centos:stream9
+declare -A OS_PRESETS=(
+    [ubuntu2204]="ubuntu:22.04"
+    [ubuntu2404]="ubuntu:24.04"
+    [fedora40]="fedora:40"
+    [debian12]="debian:12"
+    [rocky9]="rockylinux:9"
+    [alma9]="almalinux:9"
+    [centos9]="quay.io/centos/centos:stream9"
+)
+
 # Parse command line arguments
 BUILD_TTMETAL=true  # Default to building tt-metal
 BUILD_TYPE="Debug"
@@ -11,6 +24,8 @@ COMMIT_HASH=""  # Will be fetched from GitHub
 FORCE_BUILD=false
 TT_TRAIN_COMPILER="none"  # Override tt-train compiler: none, clang-N, gcc-N
 MERGE_BRANCHES=()  # Additional branches to merge after checkout
+BASE_IMAGE="ubuntu:22.04"
+OS_LABEL="ubuntu2204"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -46,6 +61,25 @@ while [[ $# -gt 0 ]]; do
             SSH_KEY_PATH="$2"
             shift 2
             ;;
+        --os)
+            OS_LABEL="$2"
+            if [ -n "${OS_PRESETS[$OS_LABEL]+x}" ]; then
+                BASE_IMAGE="${OS_PRESETS[$OS_LABEL]}"
+            else
+                echo "ERROR: Unknown OS preset: $OS_LABEL"
+                echo "Available presets:"
+                echo "  Main:         ubuntu2204 (default), ubuntu2404, fedora40"
+                echo "  Experimental: debian12, rocky9, alma9, centos9"
+                exit 1
+            fi
+            shift 2
+            ;;
+        --base-image)
+            BASE_IMAGE="$2"
+            # Derive label from image name (replace : and / with -)
+            OS_LABEL=$(echo "$2" | tr ':/' '-')
+            shift 2
+            ;;
         --force)
             FORCE_BUILD=true
             shift
@@ -61,6 +95,10 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
+            echo "  --os PRESET         OS platform preset [default: ubuntu2204]"
+            echo "                      Main:         ubuntu2204, ubuntu2404, fedora40"
+            echo "                      Experimental: debian12, rocky9, alma9, centos9"
+            echo "  --base-image IMAGE  Custom base image (overrides --os)"
             echo "  --no-build          Don't build tt-metal during image creation"
             echo "  --skip-ttmetal      Same as --no-build"
             echo "  --build-type TYPE   Build type (Debug/Release) [default: Debug]"
@@ -74,14 +112,15 @@ while [[ $# -gt 0 ]]; do
             echo "  --merge-branch BRANCH         Merge branch after checkout (repeatable). Use user/repo:branch for forks"
             echo "  -h, --help          Show this help message"
             echo ""
-            echo "Default: Builds tt-metal in Debug mode from main branch"
-            echo "Image name will include commit hash: <user>-tt-metal-env-built-<type>-<hash>:latest"
+            echo "Default: Builds tt-metal in Debug mode from main branch on Ubuntu 22.04"
+            echo "Image name: <user>-tt-metal-env-<os>-built-<type>-<hash>:latest"
             echo ""
             echo "Examples:"
             echo "  $0 --branch main                                          # Build from main"
             echo "  $0 --branch main --merge-branch user/feature-branch       # Build main + merge a branch"
             echo "  $0 --branch main --tt-train-compiler clang-17             # Build with clang-17 for tt-train"
             echo "  $0 --branch main --merge-branch pr-branch --merge-branch fix-branch  # Merge multiple"
+            echo "  $0 --os fedora40                                          # Build on Fedora 40"
             exit 0
             ;;
         *)
@@ -136,7 +175,7 @@ echo "Commit hash (short): $COMMIT_HASH_SHORT"
 echo "Checkout ref: $CHECKOUT_REF ($REF_TYPE)"
 
 # Generate image repository name based on options
-IMAGE_REPO="${USER}-tt-metal-env"
+IMAGE_REPO="${USER}-tt-metal-env-${OS_LABEL}"
 if [ "$BUILD_TTMETAL" = "true" ]; then
     IMAGE_REPO="${IMAGE_REPO}-built-${BUILD_TYPE,,}"
 else
@@ -170,6 +209,7 @@ FULL_IMAGE_NAME="${IMAGE_REPO}:${IMAGE_TAG}"
 
 echo "Building Docker image: $FULL_IMAGE_NAME"
 echo "Configuration:"
+echo "  BASE_IMAGE: $BASE_IMAGE ($OS_LABEL)"
 echo "  BUILD_TTMETAL: $BUILD_TTMETAL"
 echo "  BUILD_TYPE: $BUILD_TYPE"
 echo "  TT_METAL_BRANCH: $TT_METAL_BRANCH"
@@ -263,6 +303,7 @@ ssh-add -l
 echo "Starting Docker build..."
 docker build \
     --ssh default \
+    --build-arg BASE_IMAGE=$BASE_IMAGE \
     --build-arg BUILD_TTMETAL=$BUILD_TTMETAL \
     --build-arg BUILD_TYPE=$BUILD_TYPE \
     --build-arg CHECKOUT_REF=$CHECKOUT_REF \

@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1.4
-# Use Ubuntu 22.04 as base (matching your environment)
-FROM ubuntu:22.04
+# Multi-platform tt-metal container build.
+# Supported platforms:
+#   Main:         ubuntu:22.04, ubuntu:24.04, fedora:40
+#   Experimental: debian:12, rockylinux:9, almalinux:9, centos:stream9
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
 
 # Build arguments
 ARG BUILD_TTMETAL=true
@@ -18,66 +22,39 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TT_METAL_HOME=/workspace/tt-metal
 ENV TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME
 ENV PYTHONPATH=$TT_METAL_HOME
-# ARCH_NAME removed - hardware is now auto-detected
-ENV PATH=/opt/cmake/bin:$PATH
 
-RUN apt-get update && apt-get install -y \
-    # Basic tools
-    sudo \
-    wget \
-    curl \
-    git \
-    git-lfs \
-    vim \
-    nano \
-    openssh-client \
-    # Build tools
-    build-essential \
-    dkms \
-    ccache \
-    ninja-build \
-    pkg-config \
-    clang \
-    llvm \
-    # Python
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
-    python3-numpy \
-    # Libraries
-    libstdc++-12-dev \
-    libmpfr-dev \
-    libgmp-dev \
-    libmpc-dev \
-    libnuma-dev \
-    libhwloc-dev \
-    libtbb-dev \
-    libcapstone-dev \
-    # MPI support
-    libopenmpi-dev \
-    openmpi-bin \
-    # Additional tools
-    cargo \
-    pandoc \
-    graphviz \
-    doxygen \
-    texlive-latex-base \
-    # System tools
-    kmod \
-    pciutils \
-    && rm -rf /var/lib/apt/lists/*
+# Bootstrap packages — minimal set not provided by install_dependencies.sh.
+# Required:  sudo, wget, ca-certificates, git, git-lfs (needed before install_dependencies.sh)
+# Optional:  curl (redundant but used during repo setup), openssh-client (SSH clone),
+#            ccache (build acceleration), kmod/pciutils (runtime device interaction)
+# Detects package manager (apt vs dnf vs yum) and installs accordingly.
+RUN if command -v apt-get >/dev/null 2>&1; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            sudo wget curl ca-certificates \
+            git git-lfs openssh-client \
+            ccache kmod pciutils \
+        && rm -rf /var/lib/apt/lists/*; \
+    elif command -v dnf >/dev/null 2>&1; then \
+        dnf install -y \
+            sudo wget curl ca-certificates \
+            git git-lfs openssh-clients \
+            ccache kmod pciutils \
+        && dnf clean all; \
+    elif command -v yum >/dev/null 2>&1; then \
+        yum install -y epel-release && \
+        yum install -y \
+            sudo wget curl ca-certificates \
+            git git-lfs openssh-clients \
+            ccache kmod pciutils \
+        && yum clean all; \
+    else \
+        echo "ERROR: No supported package manager found (apt, dnf, yum)" && exit 1; \
+    fi
 
 # Configure wget for retries on network failures
 RUN echo "tries = 5" >> /etc/wgetrc && \
     echo "waitretry = 10" >> /etc/wgetrc && \
     echo "retry_connrefused = on" >> /etc/wgetrc
-
-# Install CMake 3.30.9 from source (required for tt-train)
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.30.9/cmake-3.30.9-linux-x86_64.tar.gz && \
-    tar -xzf cmake-3.30.9-linux-x86_64.tar.gz && \
-    mv cmake-3.30.9-linux-x86_64 /opt/cmake && \
-    rm cmake-3.30.9-linux-x86_64.tar.gz
 
 # Configure git and git-lfs
 RUN git config --global user.email "docker@tt-metal.local" && \
@@ -86,10 +63,11 @@ RUN git config --global user.email "docker@tt-metal.local" && \
 
 # Setup SSH for GitHub (will use host's SSH keys when mounted)
 RUN mkdir -p /root/.ssh && \
-    echo "Host github.com\n\tStrictHostKeyChecking no\n" > /root/.ssh/config && \
+    printf "Host github.com\n\tStrictHostKeyChecking no\n" > /root/.ssh/config && \
     chmod 600 /root/.ssh/config
 
 # Configure .bashrc for environment variables and history
+# Remove existing HISTSIZE/HISTFILESIZE (some base images set these)
 RUN echo "export TT_METAL_HOME=$TT_METAL_HOME" >> /root/.bashrc && \
     echo 'export TT_METAL_RUNTIME_ROOT=$TT_METAL_HOME' >> /root/.bashrc && \
     echo 'export PYTHONPATH=$TT_METAL_HOME' >> /root/.bashrc && \
@@ -122,7 +100,6 @@ RUN --mount=type=ssh \
     ACTUAL_HASH=$(git rev-parse HEAD) && \
     echo "Checked out commit: ${ACTUAL_HASH}" && \
     echo "Expected commit:    ${EXPECTED_COMMIT_HASH}" && \
-    # Handle short hashes - check if actual hash starts with expected hash \
     case "${ACTUAL_HASH}" in \
         "${EXPECTED_COMMIT_HASH}"*) \
             echo "Commit hash verified successfully!" ;; \
@@ -132,12 +109,6 @@ RUN --mount=type=ssh \
             echo "The ${REF_TYPE} '${CHECKOUT_REF}' has moved during the build." && \
             echo "Expected: ${EXPECTED_COMMIT_HASH}" && \
             echo "Got:      ${ACTUAL_HASH}" && \
-            echo "" && \
-            echo "This can happen if:" && \
-            echo "  - New commits were pushed to ${CHECKOUT_REF} during build" && \
-            echo "  - Network delay between hash fetch and checkout" && \
-            echo "" && \
-            echo "Solution: Run the build script again to use the new commit hash." && \
             echo "" && \
             exit 1 ;; \
     esac && \
@@ -171,8 +142,8 @@ RUN --mount=type=ssh \
         echo "No additional branches to merge"; \
     fi
 
-# Install tt-metal dependencies
-RUN ./install_dependencies.sh || true
+# Let install_dependencies.sh handle everything: cmake, clang, build tools, libraries
+RUN ./install_dependencies.sh
 
 # Install override compiler for tt-train if requested
 # Accepts: "none" (default), "clang-N" (installs clang-N), "gcc-N" (checks gcc-N exists)
@@ -209,16 +180,13 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Building tt-metal with build type: ${BUILD_TYPE}" && \
         export CCACHE_DIR=/ccache && \
         export PATH=/usr/lib/ccache:$PATH && \
-        # Configure ccache
         ccache -M 10G && \
         echo "Initial ccache statistics:" && \
         ccache -z && \
         ccache -s && \
-        # Build tt-metal
         . python_env/bin/activate && \
         BUILD_TYPE_LOWER=$(echo ${BUILD_TYPE} | tr '[:upper:]' '[:lower:]') && \
         ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
-        # Show ccache results
         echo "Final ccache statistics:" && \
         ccache -s && \
         deactivate; \
@@ -227,7 +195,6 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     fi
 
 # Install ttml Python module (editable for development)
-# Note: create_venv.sh installs uv, so we use uv pip instead of pip
 RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Installing ttml Python module..." && \
         . $TT_METAL_HOME/python_env/bin/activate && \
@@ -286,14 +253,12 @@ RUN echo '#!/bin/bash\n\
 source $TT_METAL_HOME/python_env/bin/activate\n\
 export CCACHE_DIR=/ccache\n\
 export PATH=/usr/lib/ccache:$PATH\n\
-# Initialize ccache if directory is mounted\n\
 if [ -d "/ccache" ] && [ -w "/ccache" ]; then\n\
     echo "Ccache directory mounted and writable"\n\
     ccache -M 10G 2>/dev/null || true\n\
 else\n\
     echo "Warning: Ccache directory not mounted or not writable"\n\
 fi\n\
-# Mount host SSH keys if provided\n\
 if [ -d "/host-ssh" ]; then\n\
     cp -r /host-ssh/* /root/.ssh/ 2>/dev/null || true\n\
     chmod 600 /root/.ssh/* 2>/dev/null || true\n\
@@ -303,4 +268,3 @@ exec "$@"' > /entrypoint.sh && \
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/bin/bash"]
-
