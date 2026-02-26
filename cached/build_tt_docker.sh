@@ -24,6 +24,7 @@ COMMIT_HASH=""  # Will be fetched from GitHub
 FORCE_BUILD=false
 TT_TRAIN_COMPILER="none"  # Override tt-train compiler: none, clang-N, gcc-N
 MERGE_BRANCHES=()  # Additional branches to merge after checkout
+SKIP_TT_TRAIN_STANDALONE=false  # Skip standalone tt-train builds (pip install + cmake)
 BASE_IMAGE="ubuntu:22.04"
 OS_LABEL="ubuntu2204"
 
@@ -92,6 +93,10 @@ while [[ $# -gt 0 ]]; do
             MERGE_BRANCHES+=("$2")
             shift 2
             ;;
+        --skip-tt-train-standalone)
+            SKIP_TT_TRAIN_STANDALONE=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
@@ -110,6 +115,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --force             Force rebuild even if image exists"
             echo "  --tt-train-compiler COMPILER  Override tt-train compiler: none, clang-N, gcc-N [default: none]"
             echo "  --merge-branch BRANCH         Merge branch after checkout (repeatable). Use user/repo:branch for forks"
+            echo "  --skip-tt-train-standalone    Skip standalone tt-train builds (pip install + cmake)"
             echo "  -h, --help          Show this help message"
             echo ""
             echo "Default: Builds tt-metal in Debug mode from main branch on Ubuntu 22.04"
@@ -215,6 +221,7 @@ echo "  BUILD_TYPE: $BUILD_TYPE"
 echo "  TT_METAL_BRANCH: $TT_METAL_BRANCH"
 echo "  COMMIT_HASH: $COMMIT_HASH_SHORT"
 echo "  TT_TRAIN_COMPILER: $TT_TRAIN_COMPILER"
+echo "  SKIP_TT_TRAIN_STANDALONE: $SKIP_TT_TRAIN_STANDALONE"
 echo "  MERGE_BRANCHES: ${MERGE_BRANCHES[*]:-none}"
 echo "  SSH_KEY_PATH: $SSH_KEY_PATH"
 
@@ -310,6 +317,7 @@ docker build \
     --build-arg EXPECTED_COMMIT_HASH=$COMMIT_HASH \
     --build-arg REF_TYPE=$REF_TYPE \
     --build-arg TT_TRAIN_COMPILER=$TT_TRAIN_COMPILER \
+    --build-arg SKIP_TT_TRAIN_STANDALONE=$SKIP_TT_TRAIN_STANDALONE \
     --build-arg "MERGE_BRANCHES=${MERGE_BRANCHES[*]}" \
     -t "${FULL_IMAGE_NAME}" \
     -f Dockerfile \

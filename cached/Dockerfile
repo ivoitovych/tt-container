@@ -16,6 +16,10 @@ ARG REF_TYPE=branch
 ARG TT_TRAIN_COMPILER=none
 # Space-separated list of branches to merge after checkout (empty = none)
 ARG MERGE_BRANCHES=""
+# Skip standalone tt-train builds (pip install -e and standalone cmake).
+# When true, tt-train is only built via build_metal.sh --build-all (integrated build).
+# Python access relies on .pth files created by create_venv.sh.
+ARG SKIP_TT_TRAIN_STANDALONE=false
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -195,19 +199,24 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     fi
 
 # Install ttml Python module (editable for development)
-RUN if [ "$BUILD_TTMETAL" = "true" ]; then \
-        echo "Installing ttml Python module..." && \
+# Skipped when SKIP_TT_TRAIN_STANDALONE=true (relies on .pth files from create_venv.sh instead)
+RUN if [ "$BUILD_TTMETAL" = "true" ] && [ "$SKIP_TT_TRAIN_STANDALONE" != "true" ]; then \
+        echo "Installing ttml Python module via pip..." && \
         . $TT_METAL_HOME/python_env/bin/activate && \
         uv pip install -e $TT_METAL_HOME/tt-train && \
         deactivate; \
+    elif [ "$BUILD_TTMETAL" = "true" ]; then \
+        echo "Skipping standalone pip install (SKIP_TT_TRAIN_STANDALONE=true)" && \
+        echo "ttml Python access via .pth files from create_venv.sh"; \
     else \
         echo "Skipping ttml installation (BUILD_TTMETAL=false)"; \
     fi
 
-# Build tt-train C++ components with cache mount
+# Build tt-train C++ components standalone (with cache mount)
 # When TT_TRAIN_COMPILER is set, override the compiler and disable inheritance
+# Skipped when SKIP_TT_TRAIN_STANDALONE=true (tt-train already built via build_metal.sh --build-all)
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
-    if [ "$BUILD_TTMETAL" = "true" ]; then \
+    if [ "$BUILD_TTMETAL" = "true" ] && [ "$SKIP_TT_TRAIN_STANDALONE" != "true" ]; then \
         echo "Building tt-train with build type: ${BUILD_TYPE}" && \
         export CCACHE_DIR=/ccache && \
         export PATH=/usr/lib/ccache:$PATH && \
@@ -232,7 +241,10 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
               $CMAKE_EXTRA_ARGS \
               -B build -GNinja && \
         cmake --build build --config ${BUILD_TYPE} --clean-first && \
-        echo "tt-train build completed"; \
+        echo "tt-train standalone build completed"; \
+    elif [ "$BUILD_TTMETAL" = "true" ]; then \
+        echo "Skipping standalone tt-train build (SKIP_TT_TRAIN_STANDALONE=true)" && \
+        echo "tt-train C++ components built via build_metal.sh --build-all"; \
     else \
         echo "Skipping tt-train build (BUILD_TTMETAL=false)"; \
     fi
