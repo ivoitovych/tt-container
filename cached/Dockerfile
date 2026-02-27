@@ -169,15 +169,15 @@ RUN if [ "$TT_TRAIN_COMPILER" != "none" ]; then \
         esac; \
     fi
 
-# Create Python virtual environment for tt-metal
-RUN ./create_venv.sh
-
 # Setup ccache configuration
 RUN mkdir -p /etc/ccache && \
     echo "cache_dir = /ccache" > /etc/ccache/ccache.conf && \
     echo "max_size = 10G" >> /etc/ccache/ccache.conf
 
 # Build tt-metal with cache mount
+# Note: build runs BEFORE create_venv.sh — build_metal.sh uses system Python
+# for CMake discovery and does not need the venv. This ordering ensures that
+# create_venv.sh finds the build output and creates _ttml.pth for the C++ extension.
 WORKDIR $TT_METAL_HOME
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
@@ -188,15 +188,18 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         echo "Initial ccache statistics:" && \
         ccache -z && \
         ccache -s && \
-        . python_env/bin/activate && \
         BUILD_TYPE_LOWER=$(echo ${BUILD_TYPE} | tr '[:upper:]' '[:lower:]') && \
         ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
         echo "Final ccache statistics:" && \
-        ccache -s && \
-        deactivate; \
+        ccache -s; \
     else \
         echo "Skipping tt-metal build (BUILD_TTMETAL=false)"; \
     fi
+
+# Create Python virtual environment for tt-metal
+# Runs AFTER build so that create_venv.sh finds build/tt-train/sources/ttml/
+# and creates _ttml.pth pointing to the built C++ extension.
+RUN ./create_venv.sh
 
 # Install ttml Python module (editable for development)
 # Skipped when SKIP_TT_TRAIN_STANDALONE=true (relies on .pth files from create_venv.sh instead)
