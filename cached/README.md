@@ -1,7 +1,7 @@
 
 # Tenstorrent tt-metal Docker Development Environment
 
-A containerized development environment for Tenstorrent's tt-metal framework, providing a reproducible and isolated workspace for hardware development and testing. This repository includes a Dockerfile to set up an Ubuntu 22.04 container with necessary dependencies, tools, and optionally a pre-built tt-metal installation. Two helper scripts are provided: `build_tt_docker.sh` for building the Docker image and `run_tt_docker.sh` for launching the container.
+A containerized development environment for Tenstorrent's tt-metal framework, providing a reproducible and isolated workspace for hardware development and testing. This repository includes a multi-platform Dockerfile (Ubuntu 22.04 default, also supports Ubuntu 24.04, Fedora 40, and experimental RHEL-family distros) with necessary dependencies, tools, and optionally a pre-built tt-metal installation. Two helper scripts are provided: `build_tt_docker.sh` for building the Docker image and `run_tt_docker.sh` for launching the container.
 
 The setup supports cloning private Tenstorrent repositories via SSH, uses ccache for faster compiles, and mounts hardware devices (e.g., `/dev/tenstorrent`) for direct access to Tenstorrent hardware.
 
@@ -23,7 +23,7 @@ The setup supports cloning private Tenstorrent repositories via SSH, uses ccache
    ```bash
    ./build_tt_docker.sh
    ```
-   This creates an image like `<user>-tt-metal-env-built-debug-eca8b5a8f1:latest` where `eca8b5a8f1` is the commit hash automatically fetched from GitHub.
+   This creates an image like `<user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:latest` where `eca8b5a8f1` is the commit hash automatically fetched from GitHub.
 
 4. **Run a Container:**
    Launch a container from the built image:
@@ -35,7 +35,7 @@ The setup supports cloning private Tenstorrent repositories via SSH, uses ccache
 5. **Backup Your Container (optional):**
    To save your work after making changes, from another terminal:
    ```bash
-   docker commit <user>-tt-metal-container <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+   docker commit <user>-tt-metal-container <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:backup-2025-11-10-1
    ```
 
 ## Overview
@@ -85,6 +85,8 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 ```
 
 ### Options
+- `--os PRESET`: OS platform preset. Main: `ubuntu2204` (default), `ubuntu2404`, `fedora40`. Experimental: `debian12`, `rocky9`, `alma9`, `centos9`.
+- `--base-image IMAGE`: Custom base image (overrides `--os`). OS label is derived from the image name.
 - `--no-build` or `--skip-ttmetal`: Skip building tt-metal (creates a base image for manual builds inside the container).
 - `--build-type TYPE`: Set build type (`Debug` or `Release`). Default: `Debug`.
 - `--branch BRANCH` or `--tt-metal-branch BRANCH`: Specify tt-metal branch or commit hash. Default: `main`.
@@ -93,35 +95,36 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 - `--force`: Force rebuild even if image for this commit already exists.
 - `--ccache-dir DIR`: Host ccache directory. Default: `~/.cache/ccache-docker`.
 - `--ssh-key PATH`: Path to SSH keys directory. Default: `~/.ssh`.
+- `--compiler COMPILER`: Compiler for tt-metal build, passed to both `install_dependencies.sh` and `build_metal.sh`. Values: `clang-20` (default), `clang`, `gcc`, `gcc-12`, `gcc-14`, `clang-20-libcpp`.
 - `--tt-train-compiler COMPILER`: Override compiler for tt-train build: `none` (inherit from tt-metal), `clang-N`, or `gcc-N`. Default: `none`.
 - `--merge-branch BRANCH`: Merge an additional branch after checkout (repeatable). Use `user/repo:branch` syntax for fork branches.
-- `--compiler COMPILER`: Compiler for tt-metal build, passed to both `install_dependencies.sh` and `build_metal.sh`. Values: `clang-20` (default), `clang`, `gcc`, `gcc-12`, `gcc-14`, `clang-20-libcpp`.
+- `--skip-tt-train-standalone`: Skip standalone tt-train builds (pip install + cmake). tt-train is only built via `build_metal.sh --build-all`.
 - `-h` or `--help`: Show help message.
 
 ### Examples
 - Default build (Debug mode, main branch):
   ```bash
   ./build_tt_docker.sh
-  # Creates: <user>-tt-metal-env-built-debug-eca8b5a8f1:latest
+  # Creates: <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:latest
   ```
 
 - Release build:
   ```bash
   ./build_tt_docker.sh --build-type Release
-  # Creates: <user>-tt-metal-env-built-release-eca8b5a8f1:latest
+  # Creates: <user>-tt-metal-env-ubuntu2204-built-release-eca8b5a8f1:latest
   ```
 
 - Base image (no pre-built tt-metal):
   ```bash
   ./build_tt_docker.sh --no-build
-  # Creates: <user>-tt-metal-env-base-eca8b5a8f1:latest
+  # Creates: <user>-tt-metal-env-ubuntu2204-base-eca8b5a8f1:latest
   ```
 
 - Specific branch:
   ```bash
   ./build_tt_docker.sh --branch feature/my-branch
   # Fetches commit hash for that branch automatically
-  # Creates: <user>-tt-metal-env-built-debug-a1b2c3d4e5:latest
+  # Creates: <user>-tt-metal-env-ubuntu2204-built-debug-a1b2c3d4e5:latest
   ```
 
 - Force rebuild of existing image:
@@ -133,13 +136,13 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 - Merge additional branches (e.g., for testing a PR on top of main):
   ```bash
   ./build_tt_docker.sh --branch main --merge-branch user/feature-branch
-  # Creates: <user>-tt-metal-env-built-debug-eca8b5a8f1-merge-feature-branch:latest
+  # Creates: <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1-merge-feature-branch:latest
   ```
 
 - Build with a specific compiler for tt-train:
   ```bash
   ./build_tt_docker.sh --branch main --tt-train-compiler clang-17
-  # Creates: <user>-tt-metal-env-built-debug-eca8b5a8f1-tttrain-clang-17:latest
+  # Creates: <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1-tttrain-clang-17:latest
   ```
 
 - Merge multiple branches with compiler override:
@@ -167,7 +170,7 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 
 **Note:** If you try to build an image for a commit that already exists, the script will show an error with options to use the existing image, backup and rebuild, or build a different commit.
 
-The script generates an image name including the commit hash (e.g., `user-tt-metal-env-built-debug-eca8b5a8f1`) to prevent conflicts when working with multiple commits.
+The script generates an image name including the commit hash (e.g., `user-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1`) to prevent conflicts when working with multiple commits.
 
 ## Running the Container
 
@@ -179,7 +182,7 @@ Use `run_tt_docker.sh` to launch the container. It mounts necessary devices and 
 ```
 
 ### Options
-- `--image TAG`: Docker image to use (repository name or repository:tag). Examples: `user-tt-metal-env-built-debug-eca8b5a8f1` or `user-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1`.
+- `--image TAG`: Docker image to use (repository name or repository:tag). Examples: `user-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1` or `user-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:backup-2025-11-10-1`.
 - `--name NAME`: Container name. Default: `<user>-tt-metal-container`.
 - `--ccache-dir DIR`: Host ccache directory. Default: `~/.cache/ccache-docker`.
 - `--no-ccache`: Don't mount ccache.
@@ -196,12 +199,12 @@ Use `run_tt_docker.sh` to launch the container. It mounts necessary devices and 
 
 - Run specific image:
   ```bash
-  ./run_tt_docker.sh --image <user>-tt-metal-env-built-debug-eca8b5a8f1
+  ./run_tt_docker.sh --image <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1
   ```
 
 - Run from a backup:
   ```bash
-  ./run_tt_docker.sh --image <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+  ./run_tt_docker.sh --image <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:backup-2025-11-10-1
   ```
 
 - With workspace mount:
@@ -212,7 +215,7 @@ Use `run_tt_docker.sh` to launch the container. It mounts necessary devices and 
 - Custom configuration:
   ```bash
   ./run_tt_docker.sh \
-    --image myuser-tt-metal-env-built-release-abc123def4 \
+    --image myuser-tt-metal-env-ubuntu2204-built-release-abc123def4 \
     --name my-dev-container \
     --mount-workspace ~/tt-projects
   ```
@@ -227,10 +230,10 @@ Inside the container:
 To save your container state with all installed packages and changes:
 ```bash
 # From another terminal while container is running
-docker commit <user>-tt-metal-container <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+docker commit <user>-tt-metal-container <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:backup-2025-11-10-1
 
 # Later, run from that backup
-./run_tt_docker.sh --image <user>-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1
+./run_tt_docker.sh --image <user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:backup-2025-11-10-1
 ```
 
 The `latest` tag is your fresh build, and `backup-YYYY-MM-DD-N` tags are your saved container states.
@@ -238,7 +241,7 @@ The `latest` tag is your fresh build, and `backup-YYYY-MM-DD-N` tags are your sa
 ## Dockerfile Overview
 
 The Dockerfile:
-- Uses Ubuntu 22.04 as base.
+- Uses Ubuntu 22.04 as default base (configurable with `--os` or `--base-image`).
 - Installs dependencies (build tools, Python, libraries like libnuma-dev, cargo).
 - Installs CMake 3.30.9 (required for tt-train).
 - Clones Tenstorrent repos (`tt-system-tools`, `tt-smi`, `tt-metal`) via SSH.
@@ -251,21 +254,23 @@ The Dockerfile:
 - Sets up an entrypoint for venv activation, ccache, and SSH setup.
 
 ### Build Arguments
+- `BASE_IMAGE` (string): Base Docker image. Default: `ubuntu:22.04`. Set via `--os` or `--base-image`.
 - `BUILD_TTMETAL` (true/false): Build tt-metal? Default: `true`.
 - `BUILD_TYPE` (Debug/Release): Build type. Default: `Debug`.
 - `CHECKOUT_REF` (branch/tag/commit): What to checkout in the container. Default: `main`.
 - `EXPECTED_COMMIT_HASH`: The commit hash that should result from the checkout (for verification).
 - `REF_TYPE` (branch/tag/commit): Type of reference being checked out.
+- `COMPILER` (string): Compiler selection passed to `install_dependencies.sh` (controls LLVM installation) and `build_metal.sh` (selects toolchain file). Values: empty (default, uses clang-20), `clang`, `gcc`, `clang-20`, `clang-20-libcpp`, `gcc-12`, `gcc-14`.
 - `TT_TRAIN_COMPILER` (none/clang-N/gcc-N): Override compiler for tt-train build. Default: `none` (inherit from tt-metal's CMakeCache.txt).
 - `MERGE_BRANCHES` (space-separated list): Additional branches to merge after checkout. Supports fork syntax (`user/repo:branch`). Default: empty.
-- `COMPILER` (string): Compiler selection passed to `install_dependencies.sh` (controls LLVM installation) and `build_metal.sh` (selects toolchain file). Values: empty (default, uses clang-20), `clang`, `gcc`, `clang-20`, `clang-20-libcpp`, `gcc-12`, `gcc-14`.
+- `SKIP_TT_TRAIN_STANDALONE` (true/false): Skip standalone tt-train builds. Default: `false`.
 
 **Note:** The build script automatically sets these values. `CHECKOUT_REF` preserves branch/tag names to maintain tracking, while `EXPECTED_COMMIT_HASH` ensures the checkout results in the correct commit.
 
 ## Container Features
 
 ### Included Software
-- Ubuntu 22.04 base system.
+- Linux base system (Ubuntu 22.04 default; also supports Ubuntu 24.04, Fedora 40, and others via `--os`).
 - tt-metal framework (cloned and optionally pre-built).
 - tt-smi and tt-system-tools utilities.
 - CMake 3.30.9 (required for tt-train).
@@ -353,13 +358,13 @@ cd /workspace/user
 Run multiple containers with different configurations:
 ```bash
 # Terminal 1: Debug environment
-./run_tt_docker.sh --name debug-env --image <user>-tt-metal-env-built-debug-abc123
+./run_tt_docker.sh --name debug-env --image <user>-tt-metal-env-ubuntu2204-built-debug-abc123
 
 # Terminal 2: Release environment
-./run_tt_docker.sh --name release-env --image <user>-tt-metal-env-built-release-abc123
+./run_tt_docker.sh --name release-env --image <user>-tt-metal-env-ubuntu2204-built-release-abc123
 
 # Terminal 3: Different commit
-./run_tt_docker.sh --name test-env --image <user>-tt-metal-env-built-debug-def456
+./run_tt_docker.sh --name test-env --image <user>-tt-metal-env-ubuntu2204-built-debug-def456
 ```
 
 ### Custom Workspace Structure
@@ -415,20 +420,20 @@ ccache -z
 
 Images are named with the pattern `<user>-tt-metal-env-<os>-<type>-<commit-hash>[-merge-<branch>][-<compiler>][-tttrain-<compiler>][-<suffix>]:<tag>`:
 - Repository includes commit hash: `<user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1`
-- Optional compiler label: appended when `--compiler` is used (e.g., `-gcc`, `-clang`)
 - Optional merge label: appended when `--merge-branch` is used (last path component, truncated to 20 chars)
+- Optional compiler label: appended when `--compiler` is used (e.g., `-gcc`, `-clang`)
 - Optional tt-train compiler label: appended when `--tt-train-compiler` is used
 - `latest` tag: Fresh build from Dockerfile
 - `backup-YYYY-MM-DD-N` tags: Saved container states via `docker commit`
 
 Examples:
-- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:latest` - Fresh Debug build
-- `ivoitovych-tt-metal-env-built-release-eca8b5a8f1:latest` - Fresh Release build
-- `ivoitovych-tt-metal-env-base-eca8b5a8f1:latest` - Base image without pre-built tt-metal
+- `ivoitovych-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:latest` - Fresh Debug build
+- `ivoitovych-tt-metal-env-ubuntu2204-built-release-eca8b5a8f1:latest` - Fresh Release build
+- `ivoitovych-tt-metal-env-ubuntu2204-base-eca8b5a8f1:latest` - Base image without pre-built tt-metal
 - `ivoitovych-tt-metal-env-fedora40-built-debug-eca8b5a8f1-gcc:latest` - Fedora 40 with GCC compiler
-- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1-merge-feature-branch:latest` - With merged branch
-- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1-tttrain-gcc-12:latest` - With tt-train compiler override
-- `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1` - Saved container state
+- `ivoitovych-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1-merge-feature-branch:latest` - With merged branch
+- `ivoitovych-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1-tttrain-gcc-12:latest` - With tt-train compiler override
+- `ivoitovych-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1:backup-2025-11-10-1` - Saved container state
 
 View all available images:
 ```bash

@@ -154,7 +154,7 @@ RUN ./install_dependencies.sh ${COMPILER:+--compiler "$COMPILER"}
 
 # Install override compiler for tt-train if requested
 # Accepts: "none" (default), "clang-N" (installs clang-N), "gcc-N" (checks gcc-N exists)
-# tt-metal always builds with clang-20 from install_dependencies.sh
+# tt-metal compiler is controlled separately via the COMPILER build arg
 RUN if [ "$TT_TRAIN_COMPILER" != "none" ]; then \
         echo "=== tt-train compiler override: $TT_TRAIN_COMPILER ===" && \
         case "$TT_TRAIN_COMPILER" in \
