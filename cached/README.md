@@ -95,6 +95,7 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
 - `--ssh-key PATH`: Path to SSH keys directory. Default: `~/.ssh`.
 - `--tt-train-compiler COMPILER`: Override compiler for tt-train build: `none` (inherit from tt-metal), `clang-N`, or `gcc-N`. Default: `none`.
 - `--merge-branch BRANCH`: Merge an additional branch after checkout (repeatable). Use `user/repo:branch` syntax for fork branches.
+- `--compiler COMPILER`: Compiler for tt-metal build, passed to both `install_dependencies.sh` and `build_metal.sh`. Values: `clang-20` (default), `clang`, `gcc`, `gcc-12`, `gcc-14`, `clang-20-libcpp`.
 - `-h` or `--help`: Show help message.
 
 ### Examples
@@ -146,6 +147,12 @@ Use `build_tt_docker.sh` to build the image. By default, it builds tt-metal in D
   ./build_tt_docker.sh --branch main \
     --merge-branch pr-branch --merge-branch fix-branch \
     --tt-train-compiler gcc-12
+  ```
+
+- Build on Fedora with GCC:
+  ```bash
+  ./build_tt_docker.sh --os fedora40 --compiler gcc
+  # Creates: <user>-tt-metal-env-fedora40-built-debug-eca8b5a8f1-gcc:latest
   ```
 
 - Advanced configuration:
@@ -251,6 +258,7 @@ The Dockerfile:
 - `REF_TYPE` (branch/tag/commit): Type of reference being checked out.
 - `TT_TRAIN_COMPILER` (none/clang-N/gcc-N): Override compiler for tt-train build. Default: `none` (inherit from tt-metal's CMakeCache.txt).
 - `MERGE_BRANCHES` (space-separated list): Additional branches to merge after checkout. Supports fork syntax (`user/repo:branch`). Default: empty.
+- `COMPILER` (string): Compiler selection passed to `install_dependencies.sh` (controls LLVM installation) and `build_metal.sh` (selects toolchain file). Values: empty (default, uses clang-20), `clang`, `gcc`, `clang-20`, `clang-20-libcpp`, `gcc-12`, `gcc-14`.
 
 **Note:** The build script automatically sets these values. `CHECKOUT_REF` preserves branch/tag names to maintain tracking, while `EXPECTED_COMMIT_HASH` ensures the checkout results in the correct commit.
 
@@ -405,10 +413,11 @@ ccache -z
 
 ## Image Tags
 
-Images are named with the pattern `<user>-tt-metal-env-<type>-<commit-hash>[-merge-<branch>][-tttrain-<compiler>][-<suffix>]:<tag>`:
-- Repository includes commit hash: `<user>-tt-metal-env-built-debug-eca8b5a8f1`
+Images are named with the pattern `<user>-tt-metal-env-<os>-<type>-<commit-hash>[-merge-<branch>][-<compiler>][-tttrain-<compiler>][-<suffix>]:<tag>`:
+- Repository includes commit hash: `<user>-tt-metal-env-ubuntu2204-built-debug-eca8b5a8f1`
+- Optional compiler label: appended when `--compiler` is used (e.g., `-gcc`, `-clang`)
 - Optional merge label: appended when `--merge-branch` is used (last path component, truncated to 20 chars)
-- Optional compiler label: appended when `--tt-train-compiler` is used
+- Optional tt-train compiler label: appended when `--tt-train-compiler` is used
 - `latest` tag: Fresh build from Dockerfile
 - `backup-YYYY-MM-DD-N` tags: Saved container states via `docker commit`
 
@@ -416,6 +425,7 @@ Examples:
 - `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:latest` - Fresh Debug build
 - `ivoitovych-tt-metal-env-built-release-eca8b5a8f1:latest` - Fresh Release build
 - `ivoitovych-tt-metal-env-base-eca8b5a8f1:latest` - Base image without pre-built tt-metal
+- `ivoitovych-tt-metal-env-fedora40-built-debug-eca8b5a8f1-gcc:latest` - Fedora 40 with GCC compiler
 - `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1-merge-feature-branch:latest` - With merged branch
 - `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1-tttrain-gcc-12:latest` - With tt-train compiler override
 - `ivoitovych-tt-metal-env-built-debug-eca8b5a8f1:backup-2025-11-10-1` - Saved container state

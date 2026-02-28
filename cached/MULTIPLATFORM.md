@@ -39,6 +39,9 @@ This document describes the supported platforms, their status, and known limitat
 ./build_tt_docker.sh --os fedora40
 ./build_tt_docker.sh --os rocky9
 
+# Build with a specific compiler (passed to build_metal.sh and install_dependencies.sh)
+./build_tt_docker.sh --os fedora40 --compiler gcc
+
 # Build with a custom base image
 ./build_tt_docker.sh --base-image myregistry/myimage:mytag
 ```
@@ -57,14 +60,18 @@ ivoitovych-tt-metal-env-rocky9-built-debug-c765173f20:latest
 
 The following limitations apply to Red Hat-family distributions (Rocky, Alma, CentOS Stream):
 
-1. **`install_dependencies.sh` Red Hat support is incomplete.**
-   The `prep_redhat_system()` function is a stub — it prints a message but installs nothing.
-   LLVM/Clang installation is skipped on non-Debian systems. This means builds on
-   Red Hat-family distros will likely fail at the dependency installation step until
-   upstream adds full support.
+1. **`install_dependencies.sh` Red Hat support is partial.**
+   As of [PR #38608](https://github.com/tenstorrent/tt-metal/pull/38608),
+   `prep_redhat_system()` sets up EPEL and CRB repositories (Fedora returns early),
+   and `install_llvm()` reports the distro-provided Clang version on Red Hat.
+   However, most package installation in `install_dependencies.sh` still uses
+   Debian package names — Red Hat builds rely on the Dockerfile bootstrap layer
+   for prerequisites and the distro's default compilers.
 
 2. **MPI ULFM and hugepages setup skipped on non-Debian.**
    These are handled only in the Debian/Ubuntu code path of `install_dependencies.sh`.
+   On Red Hat-family distros, `install_dependencies.sh` prints informational messages
+   noting these are only available as `.deb` packages.
 
 3. **Package name differences.**
    Some packages have different names between apt and dnf (e.g., `openssh-client`

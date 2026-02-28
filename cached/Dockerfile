@@ -20,6 +20,9 @@ ARG MERGE_BRANCHES=""
 # When true, tt-train is only built via build_metal.sh --build-all (integrated build).
 # Python access relies on .pth files created by create_venv.sh.
 ARG SKIP_TT_TRAIN_STANDALONE=false
+# Compiler selection: passed to install_dependencies.sh and build_metal.sh
+# Values: "" (default clang-20), clang, gcc, clang-20, clang-20-libcpp, gcc-12, gcc-14
+ARG COMPILER=
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -147,7 +150,7 @@ RUN --mount=type=ssh \
     fi
 
 # Let install_dependencies.sh handle everything: cmake, clang, build tools, libraries
-RUN ./install_dependencies.sh
+RUN ./install_dependencies.sh ${COMPILER:+--compiler "$COMPILER"}
 
 # Install override compiler for tt-train if requested
 # Accepts: "none" (default), "clang-N" (installs clang-N), "gcc-N" (checks gcc-N exists)
@@ -157,7 +160,13 @@ RUN if [ "$TT_TRAIN_COMPILER" != "none" ]; then \
         case "$TT_TRAIN_COMPILER" in \
             clang-*) \
                 echo "Installing $TT_TRAIN_COMPILER..." && \
-                apt-get update && apt-get install -y "$TT_TRAIN_COMPILER" && rm -rf /var/lib/apt/lists/* && \
+                if command -v apt-get >/dev/null 2>&1; then \
+                    apt-get update && apt-get install -y "$TT_TRAIN_COMPILER" && rm -rf /var/lib/apt/lists/*; \
+                elif command -v dnf >/dev/null 2>&1; then \
+                    dnf install -y "$TT_TRAIN_COMPILER"; \
+                else \
+                    echo "ERROR: No supported package manager for installing $TT_TRAIN_COMPILER" && exit 1; \
+                fi && \
                 "$TT_TRAIN_COMPILER" --version ;; \
             gcc-*) \
                 GCCVER="$TT_TRAIN_COMPILER" && \
@@ -189,7 +198,7 @@ RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
         ccache -z && \
         ccache -s && \
         BUILD_TYPE_LOWER=$(echo ${BUILD_TYPE} | tr '[:upper:]' '[:lower:]') && \
-        ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache && \
+        ./build_metal.sh --${BUILD_TYPE_LOWER} --build-all --enable-ccache ${COMPILER:+--compiler "$COMPILER"} && \
         echo "Final ccache statistics:" && \
         ccache -s; \
     else \

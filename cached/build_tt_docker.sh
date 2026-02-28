@@ -27,6 +27,7 @@ MERGE_BRANCHES=()  # Additional branches to merge after checkout
 SKIP_TT_TRAIN_STANDALONE=false  # Skip standalone tt-train builds (pip install + cmake)
 BASE_IMAGE="ubuntu:22.04"
 OS_LABEL="ubuntu2204"
+COMPILER=""  # Compiler selection for build_metal.sh and install_dependencies.sh
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -97,6 +98,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_TT_TRAIN_STANDALONE=true
             shift
             ;;
+        --compiler)
+            COMPILER="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
@@ -116,6 +121,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tt-train-compiler COMPILER  Override tt-train compiler: none, clang-N, gcc-N [default: none]"
             echo "  --merge-branch BRANCH         Merge branch after checkout (repeatable). Use user/repo:branch for forks"
             echo "  --skip-tt-train-standalone    Skip standalone tt-train builds (pip install + cmake)"
+            echo "  --compiler COMPILER           Compiler for tt-metal build: clang-20 (default), clang, gcc, gcc-12, gcc-14, clang-20-libcpp"
             echo "  -h, --help          Show this help message"
             echo ""
             echo "Default: Builds tt-metal in Debug mode from main branch on Ubuntu 22.04"
@@ -127,6 +133,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --branch main --tt-train-compiler clang-17             # Build with clang-17 for tt-train"
             echo "  $0 --branch main --merge-branch pr-branch --merge-branch fix-branch  # Merge multiple"
             echo "  $0 --os fedora40                                          # Build on Fedora 40"
+            echo "  $0 --os fedora40 --compiler gcc                             # Build on Fedora with GCC"
             exit 0
             ;;
         *)
@@ -135,6 +142,22 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Validate compiler flag
+if [ -n "$COMPILER" ]; then
+    COMPILER_FLAGS=(clang gcc clang-20 clang-20-libcpp gcc-12 gcc-14)
+    VALID=false
+    for flag in "${COMPILER_FLAGS[@]}"; do
+        if [ "$COMPILER" = "$flag" ]; then
+            VALID=true
+            break
+        fi
+    done
+    if [ "$VALID" = "false" ]; then
+        echo "ERROR: Unknown compiler '$COMPILER'. Allowed: ${COMPILER_FLAGS[*]}"
+        exit 1
+    fi
+fi
 
 # Fetch commit hash from GitHub if not specified
 if [ -z "$COMMIT_HASH" ]; then
@@ -200,6 +223,11 @@ if [ ${#MERGE_BRANCHES[@]} -gt 0 ]; then
     IMAGE_REPO="${IMAGE_REPO}-merge-${MERGE_LABEL}"
 fi
 
+# Append compiler override to image name
+if [ -n "$COMPILER" ]; then
+    IMAGE_REPO="${IMAGE_REPO}-${COMPILER}"
+fi
+
 # Append tt-train compiler override to image name
 if [ "$TT_TRAIN_COMPILER" != "none" ]; then
     IMAGE_REPO="${IMAGE_REPO}-tttrain-${TT_TRAIN_COMPILER}"
@@ -220,6 +248,7 @@ echo "  BUILD_TTMETAL: $BUILD_TTMETAL"
 echo "  BUILD_TYPE: $BUILD_TYPE"
 echo "  TT_METAL_BRANCH: $TT_METAL_BRANCH"
 echo "  COMMIT_HASH: $COMMIT_HASH_SHORT"
+echo "  COMPILER: ${COMPILER:-default (clang-20)}"
 echo "  TT_TRAIN_COMPILER: $TT_TRAIN_COMPILER"
 echo "  SKIP_TT_TRAIN_STANDALONE: $SKIP_TT_TRAIN_STANDALONE"
 echo "  MERGE_BRANCHES: ${MERGE_BRANCHES[*]:-none}"
@@ -317,6 +346,7 @@ docker build \
     --build-arg EXPECTED_COMMIT_HASH=$COMMIT_HASH \
     --build-arg REF_TYPE=$REF_TYPE \
     --build-arg TT_TRAIN_COMPILER=$TT_TRAIN_COMPILER \
+    --build-arg COMPILER=$COMPILER \
     --build-arg SKIP_TT_TRAIN_STANDALONE=$SKIP_TT_TRAIN_STANDALONE \
     --build-arg "MERGE_BRANCHES=${MERGE_BRANCHES[*]}" \
     -t "${FULL_IMAGE_NAME}" \
