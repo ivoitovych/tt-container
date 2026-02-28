@@ -45,7 +45,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
         if [ ! -f /etc/fedora-release ]; then \
             dnf install -y epel-release; \
         fi && \
-        dnf install -y \
+        dnf install -y --allowerasing \
             sudo wget curl ca-certificates \
             git git-lfs openssh-clients \
             ccache kmod pciutils \

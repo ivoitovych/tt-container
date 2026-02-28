@@ -28,6 +28,7 @@ SKIP_TT_TRAIN_STANDALONE=false  # Skip standalone tt-train builds (pip install +
 BASE_IMAGE="ubuntu:22.04"
 OS_LABEL="ubuntu2204"
 COMPILER=""  # Compiler selection for build_metal.sh and install_dependencies.sh
+NO_CACHE=false  # Pass --no-cache to docker build
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -86,6 +87,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_BUILD=true
             shift
             ;;
+        --no-cache)
+            NO_CACHE=true
+            shift
+            ;;
         --tt-train-compiler)
             TT_TRAIN_COMPILER="$2"
             shift 2
@@ -118,6 +123,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ccache-dir DIR    Host ccache directory [default: ~/.cache/ccache-docker]"
             echo "  --ssh-key PATH      Path to SSH keys directory [default: ~/.ssh]"
             echo "  --force             Force rebuild even if image exists"
+            echo "  --no-cache          Disable Docker layer caching (fresh build)"
             echo "  --tt-train-compiler COMPILER  Override tt-train compiler: none, clang-N, gcc-N [default: none]"
             echo "  --merge-branch BRANCH         Merge branch after checkout (repeatable). Use user/repo:branch for forks"
             echo "  --skip-tt-train-standalone    Skip standalone tt-train builds (pip install + cmake)"
@@ -337,7 +343,13 @@ ssh-add -l
 
 # Build the image with SSH forwarding
 echo "Starting Docker build..."
+DOCKER_NO_CACHE=""
+if [ "$NO_CACHE" = "true" ]; then
+    DOCKER_NO_CACHE="--no-cache"
+fi
+
 docker build \
+    $DOCKER_NO_CACHE \
     --ssh default \
     --build-arg BASE_IMAGE=$BASE_IMAGE \
     --build-arg BUILD_TTMETAL=$BUILD_TTMETAL \
