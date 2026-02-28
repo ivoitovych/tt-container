@@ -42,6 +42,9 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
             ccache kmod pciutils \
         && rm -rf /var/lib/apt/lists/*; \
     elif command -v dnf >/dev/null 2>&1; then \
+        if [ ! -f /etc/fedora-release ]; then \
+            dnf install -y epel-release; \
+        fi && \
         dnf install -y \
             sudo wget curl ca-certificates \
             git git-lfs openssh-clients \
