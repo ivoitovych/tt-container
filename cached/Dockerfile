@@ -194,6 +194,7 @@ WORKDIR $TT_METAL_HOME
 RUN --mount=type=cache,target=/ccache,uid=1000,gid=1000,sharing=shared \
     if [ "$BUILD_TTMETAL" = "true" ]; then \
         echo "Building tt-metal with build type: ${BUILD_TYPE}" && \
+        for f in /etc/profile.d/*.sh; do [ -r "$f" ] && . "$f"; done && \
         export CCACHE_DIR=/ccache && \
         export PATH=/usr/lib/ccache:$PATH && \
         ccache -M 10G && \
