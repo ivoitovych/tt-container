@@ -2,14 +2,14 @@
 
 # OS platform presets
 # Main:         ubuntu:22.04, ubuntu:24.04, fedora:40, fedora:42
-# Experimental: debian:12, rockylinux:10, almalinux:10
+# Experimental: debian:12, almalinux:10
+# Note: rockylinux:10 not yet available as Docker image (as of March 2026)
 declare -A OS_PRESETS=(
     [ubuntu2204]="ubuntu:22.04"
     [ubuntu2404]="ubuntu:24.04"
     [fedora40]="fedora:40"
     [fedora42]="fedora:42"
     [debian12]="debian:12"
-    [rocky10]="rockylinux:10"
     [alma10]="almalinux:10"
 )
 
@@ -72,7 +72,7 @@ while [[ $# -gt 0 ]]; do
                 echo "ERROR: Unknown OS preset: $OS_LABEL"
                 echo "Available presets:"
                 echo "  Main:         ubuntu2204 (default), ubuntu2404, fedora40, fedora42"
-                echo "  Experimental: debian12, rocky10, alma10"
+                echo "  Experimental: debian12, alma10"
                 exit 1
             fi
             shift 2
@@ -112,7 +112,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --os PRESET         OS platform preset [default: ubuntu2204]"
             echo "                      Main:         ubuntu2204, ubuntu2404, fedora40"
-            echo "                      Experimental: debian12, rocky9, alma9, centos9"
+            echo "                      Experimental: debian12, alma10"
             echo "  --base-image IMAGE  Custom base image (overrides --os)"
             echo "  --no-build          Don't build tt-metal during image creation"
             echo "  --skip-ttmetal      Same as --no-build"

@@ -2,7 +2,7 @@
 # Multi-platform tt-metal container build.
 # Supported platforms:
 #   Main:         ubuntu:22.04, ubuntu:24.04, fedora:40, fedora:42
-#   Experimental: debian:12, rockylinux:10, almalinux:10
+#   Experimental: debian:12, almalinux:10
 ARG BASE_IMAGE=ubuntu:22.04
 FROM ${BASE_IMAGE}
 
