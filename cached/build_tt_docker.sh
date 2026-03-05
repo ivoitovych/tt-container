@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # OS platform presets
-# Main:         ubuntu:22.04, ubuntu:24.04, fedora:40
-# Experimental: debian:12, rockylinux:9, almalinux:9, centos:stream9
+# Main:         ubuntu:22.04, ubuntu:24.04, fedora:40, fedora:42
+# Experimental: debian:12, rockylinux:10, almalinux:10
 declare -A OS_PRESETS=(
     [ubuntu2204]="ubuntu:22.04"
     [ubuntu2404]="ubuntu:24.04"
     [fedora40]="fedora:40"
+    [fedora42]="fedora:42"
     [debian12]="debian:12"
-    [rocky9]="rockylinux:9"
-    [alma9]="almalinux:9"
-    [centos9]="quay.io/centos/centos:stream9"
+    [rocky10]="rockylinux:10"
+    [alma10]="almalinux:10"
 )
 
 # Parse command line arguments
@@ -71,8 +71,8 @@ while [[ $# -gt 0 ]]; do
             else
                 echo "ERROR: Unknown OS preset: $OS_LABEL"
                 echo "Available presets:"
-                echo "  Main:         ubuntu2204 (default), ubuntu2404, fedora40"
-                echo "  Experimental: debian12, rocky9, alma9, centos9"
+                echo "  Main:         ubuntu2204 (default), ubuntu2404, fedora40, fedora42"
+                echo "  Experimental: debian12, rocky10, alma10"
                 exit 1
             fi
             shift 2
@@ -138,8 +138,8 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --branch main --merge-branch user/feature-branch       # Build main + merge a branch"
             echo "  $0 --branch main --tt-train-compiler clang-17             # Build with clang-17 for tt-train"
             echo "  $0 --branch main --merge-branch pr-branch --merge-branch fix-branch  # Merge multiple"
-            echo "  $0 --os fedora40                                          # Build on Fedora 40"
-            echo "  $0 --os fedora40 --compiler gcc                             # Build on Fedora with GCC"
+            echo "  $0 --os fedora42                                          # Build on Fedora 42"
+            echo "  $0 --os fedora42 --compiler gcc                             # Build on Fedora with GCC"
             exit 0
             ;;
         *)
