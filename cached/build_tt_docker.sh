@@ -2,7 +2,7 @@
 
 # OS platform presets
 # Main:         ubuntu:22.04, ubuntu:24.04, fedora:40, fedora:42
-# Experimental: debian:12, almalinux:10
+# Experimental: debian:12, almalinux:10, oraclelinux:10
 # Note: rockylinux:10 not yet available as Docker image (as of March 2026)
 declare -A OS_PRESETS=(
     [ubuntu2204]="ubuntu:22.04"
@@ -11,6 +11,7 @@ declare -A OS_PRESETS=(
     [fedora42]="fedora:42"
     [debian12]="debian:12"
     [alma10]="almalinux:10"
+    [oracle10]="oraclelinux:10"
 )
 
 # Parse command line arguments
@@ -72,7 +73,7 @@ while [[ $# -gt 0 ]]; do
                 echo "ERROR: Unknown OS preset: $OS_LABEL"
                 echo "Available presets:"
                 echo "  Main:         ubuntu2204 (default), ubuntu2404, fedora40, fedora42"
-                echo "  Experimental: debian12, alma10"
+                echo "  Experimental: debian12, alma10, oracle10"
                 exit 1
             fi
             shift 2
