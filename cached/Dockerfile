@@ -43,7 +43,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
         && rm -rf /var/lib/apt/lists/*; \
     elif command -v dnf >/dev/null 2>&1; then \
         if [ ! -f /etc/fedora-release ]; then \
-            dnf install -y epel-release; \
+            dnf install -y epel-release 2>/dev/null || true; \
         fi && \
         dnf install -y --allowerasing \
             sudo wget curl ca-certificates \
