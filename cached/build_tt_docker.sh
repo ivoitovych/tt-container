@@ -152,7 +152,7 @@ done
 
 # Validate compiler flag
 if [ -n "$COMPILER" ]; then
-    COMPILER_FLAGS=(clang gcc clang-20 clang-20-libcpp gcc-12 gcc-14)
+    COMPILER_FLAGS=(clang gcc clang-20 clang-19 clang-18 clang-17 clang-20-libcpp gcc-14 gcc-13 gcc-12)
     VALID=false
     for flag in "${COMPILER_FLAGS[@]}"; do
         if [ "$COMPILER" = "$flag" ]; then
